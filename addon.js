@@ -929,8 +929,8 @@ function drawTextItem(ctx,t,labelW,{guides=false}={}){
  if(guides){ctx.strokeStyle='#0ea5e9';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);ctx.strokeRect(-width/2,-height/2,width,height);}
  ctx.restore();return g;
 }
-const ADJUST_DEFAULTS={exposure:0,contrast:0,blacks:0,whites:0,brightness:0,saturation:0,gamma:1,threshold:160,mode:'default'};
-const ADJUST_KEYS=['exposure','contrast','blacks','whites','brightness','saturation','gamma','threshold'];
+const ADJUST_DEFAULTS={exposure:0,contrast:0,blacks:0,whites:0,brightness:0,saturation:0,gamma:1,threshold:128,mode:'default'};
+const ADJUST_KEYS=['exposure','contrast','blacks','whites','brightness','saturation','gamma'];
 function imageAdjustments(entry){return entry.adjustments ||= {...ADJUST_DEFAULTS};}
 function adjustFormat(key,value){return key==='gamma'?Number(value).toFixed(2):String(Math.round(Number(value)));}
 function adjustNormalize(key,value){
@@ -961,16 +961,37 @@ function setImageAdjustValue(key,value,{preserveNumberFocus=false}={}){
 }
 function setImagePanel(entry){
  const values=entry?imageAdjustments(entry):ADJUST_DEFAULTS;
- const disabled=!entry||!!entry.locked,mode=entry?layerPrintMode(entry):'default';
+ const disabled=!entry||!!entry.locked,mode=entry?layerPrintMode(entry):'bw';
  $('dd-bw').value=mode;$('dd-bw').disabled=disabled;$('dd-adjust-reset').disabled=disabled;
  for(const key of ADJUST_KEYS){
    syncAdjustControl(key,values[key]??ADJUST_DEFAULTS[key]);
-   // The threshold only matters for "eigene Schwelle"; it is dimmed otherwise.
-   const off=disabled||(key==='threshold'&&mode!=='bw');
-   for(const suffix of ['','-number','-minus','-plus'])$('dd-'+key+suffix).disabled=off;
-   if(!off)syncAdjustControl(key,values[key]??ADJUST_DEFAULTS[key]);
-   $('dd-'+key).closest('.dd-adjustitem')?.classList.toggle('dd-off',key==='threshold'&&mode!=='bw');
+   for(const suffix of ['','-number','-minus','-plus'])$('dd-'+key+suffix).disabled=disabled;
  }
+ syncThresholdControl();
+}
+// ---- Black/white threshold, shown in the preview header next to the print view ----
+function effectiveThreshold(layer){
+ const a=imageAdjustments(layer);
+ if(a.mode==='bw'){const v=Number(a.threshold);return Number.isFinite(v)?Math.max(1,Math.min(254,Math.round(v))):128;}
+ return 128; // 'default' (V17 and earlier) = the printer driver's own 50 % rule
+}
+function syncThresholdControl(){
+ const wrap=$('dd-threshold-wrap');if(!wrap)return;
+ const entry=state.queue[state.selected],layer=activeImageLayer(entry);
+ wrap.hidden=!layer;if(!layer)return;
+ const dither=layerPrintMode(layer)==='dither',off=dither||!!layer.locked,value=effectiveThreshold(layer);
+ const slider=$('dd-threshold');
+ if(document.activeElement!==slider)slider.value=String(value);
+ $('dd-threshold-value').textContent=String(value);
+ for(const el of [slider,$('dd-threshold-minus'),$('dd-threshold-plus')])el.disabled=off;
+ wrap.classList.toggle('dd-off',off);
+ wrap.title=layer.locked?'Bild ist gesperrt':dither?'Bei „Foto – Rasterung“ gibt es keine Schwelle. Im Tab „Bild“ auf Schwarzweiß umstellen.':'Schwarzweiß-Schwelle für „'+(layer.name||'Bild')+'“: höher = mehr Schwarz, niedriger = mehr Weiß';
+}
+function setThreshold(value){
+ const layer=activeImageLayer(state.queue[state.selected]);if(!layer||layer.locked||layerPrintMode(layer)==='dither')return;
+ const a=imageAdjustments(layer);a.mode='bw';a.threshold=Math.max(1,Math.min(254,Math.round(Number(value)||128)));
+ if(!state.printView){state.printView=true;try{localStorage.setItem('niimbot-studio:printview','1');}catch(e){}updateTemplateUiState();message('Druckansicht eingeschaltet, damit die Wirkung der Schwelle sichtbar ist.');}
+ $('dd-bw').value='bw';syncThresholdControl();requestPreview();
 }
 function clamp01(v){return Math.max(0,Math.min(1,v));}
 function applyAdjustments(ctx,w,h,a){
@@ -997,11 +1018,11 @@ function applyAdjustments(ctx,w,h,a){
 // The Niimbot driver turns every pixel with luminance < 128 into a black dot. To make the
 // preview honest and photos printable, every image layer is converted to pure black/white
 // at label resolution: a fixed or custom threshold, or Floyd-Steinberg dithering for photos.
-function layerPrintMode(layer){const m=imageAdjustments(layer).mode;return m==='gray'?'dither':(['default','bw','dither'].includes(m)?m:'default');}
+function layerPrintMode(layer){const m=imageAdjustments(layer).mode;return (m==='gray'||m==='dither')?'dither':'bw';}
 function binarizeLayerCanvas(canvas,mode,threshold){
  const w=canvas.width,h=canvas.height;if(!w||!h)return;
  const ctx=canvas.getContext('2d',{willReadFrequently:true}),img=ctx.getImageData(0,0,w,h),px=img.data;
- const thr=mode==='bw'?Math.max(0,Math.min(255,Number(threshold)||160)):128;
+ const thr=mode==='bw'?Math.max(1,Math.min(254,Number(threshold)||128)):128;
  if(mode==='dither'){
   const lum=new Float32Array(w*h),solid=new Uint8Array(w*h);
   for(let i=0,p=0;p<lum.length;i+=4,p++){const a=px[i+3]/255;if(a<.5)continue;solid[p]=1;lum[p]=(.299*px[i]+.587*px[i+1]+.114*px[i+2])*a+255*(1-a);}
@@ -1057,7 +1078,7 @@ async function renderLabelCanvas(entry,baseSizeInfo,{physical=false,oneBit=false
  const ctx=canvas.getContext('2d',{alpha:false,willReadFrequently:oneBit});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
  for(const id of layerOrder(entry)){
    const layer=imageForId(entry,id);
-   if(layer){const {img,layout}=await getLayout(layer,sizeInfo);const raster=rasterizeImageLayer(layer,sizeInfo,img,layout);if(oneBit)binarizeLayerCanvas(raster,layerPrintMode(layer),imageAdjustments(layer).threshold);ctx.drawImage(raster,0,0);raster.width=raster.height=0;}
+   if(layer){const {img,layout}=await getLayout(layer,sizeInfo);const raster=rasterizeImageLayer(layer,sizeInfo,img,layout);if(oneBit)binarizeLayerCanvas(raster,layerPrintMode(layer),effectiveThreshold(layer));ctx.drawImage(raster,0,0);raster.width=raster.height=0;}
    else{const t=(entry.texts||[]).find(t=>t.id===id);if(t)drawTextItem(ctx,t,canvas.width);}
  }
  if(oneBit)finalizeOneBit(canvas);
@@ -1189,7 +1210,7 @@ async function paintPreview(){
    }
    state.editor.textHandles={rotate,width:w,height:h,both:wh,cx,cy,rotation:rad};ctx.restore();
   }
-  setRotationField(activeResult?.layout||{scale:1,baseScale:1,rotation:0});setZoomField(activeResult?.layout||{scale:1,baseScale:1,rotation:0});setPreviewZoomUi();
+  syncThresholdControl();setRotationField(activeResult?.layout||{scale:1,baseScale:1,rotation:0});setZoomField(activeResult?.layout||{scale:1,baseScale:1,rotation:0});setPreviewZoomUi();
  }catch(e){if(version!==state.previewVersion)return;message('Vorschau nicht verfügbar: '+(e.message||e),true);}
 }
 
@@ -1654,7 +1675,7 @@ function wireAdditionalControls(){
     });
   }
  }
- $('dd-bw').addEventListener('change',e=>{const layer=activeImageLayer(state.queue[state.selected]);if(layer&&!layer.locked){imageAdjustments(layer).mode=e.target.value;if(!state.printView)message('Hinweis: Der Druckmodus ist nur in der Druckansicht sichtbar (Knopf oben in der Vorschau).');}setImagePanel(layer);requestPreview();});
+ $('dd-bw').addEventListener('change',e=>{const layer=activeImageLayer(state.queue[state.selected]);if(layer&&!layer.locked){const a=imageAdjustments(layer);if(e.target.value==='bw'&&a.mode!=='bw')a.threshold=a.mode==='dither'&&Number.isFinite(Number(a.threshold))?a.threshold:128;a.mode=e.target.value==='dither'?'dither':'bw';if(!state.printView)message('Hinweis: Der Druckmodus ist nur in der Druckansicht sichtbar (Knopf oben in der Vorschau).');}setImagePanel(layer);requestPreview();});
  $('dd-adjust-reset').onclick=()=>{const layer=activeImageLayer(state.queue[state.selected]);if(!layer||layer.locked)return;layer.adjustments={...ADJUST_DEFAULTS};setImagePanel(layer);requestPreview();};
 }
 function renderTextListOnly(){const sel=state.textSelectedId;const entries=state.queue[state.selected]?.texts||[];const root=$('dd-textlist');root.replaceChildren();entries.forEach((t,i)=>{const b=document.createElement('button');b.type='button';b.textContent=`${i+1}: `+t.text.replace(/\s+/g,' ').slice(0,22);b.setAttribute('aria-pressed',t.id===sel?'true':'false');b.disabled=!!t.locked;b.onclick=()=>{if(t.locked)return;state.textSelectedId=t.id;renderTextControls();requestPreview();};root.append(b);});}
@@ -1777,6 +1798,12 @@ function setupTabbedLayout(){
  const preview=make('section','dd-preview-area');preview.id='dd-preview-area';preview.setAttribute('aria-label','Druckvorschau');
  const previewHead=make('div','dd-preview-head');
  moved($('dd-preview-title'),previewHead);
+ const thresholdWrap=make('div','dd-threshold');thresholdWrap.id='dd-threshold-wrap';thresholdWrap.setAttribute('role','group');thresholdWrap.setAttribute('aria-label','Schwarzweiß-Schwelle');thresholdWrap.hidden=true;
+ thresholdWrap.innerHTML='<label for="dd-threshold">Schwelle</label><button id="dd-threshold-minus" type="button" aria-label="Schwelle verringern (mehr Weiß)">−</button><input id="dd-threshold" type="range" min="1" max="254" step="1" value="128" aria-label="Schwarzweiß-Schwelle"><button id="dd-threshold-plus" type="button" aria-label="Schwelle erhöhen (mehr Schwarz)">+</button><output id="dd-threshold-value">128</output>';
+ previewHead.appendChild(thresholdWrap);
+ thresholdWrap.querySelector('#dd-threshold').addEventListener('input',e=>setThreshold(e.target.value));
+ thresholdWrap.querySelector('#dd-threshold-minus').addEventListener('click',()=>setThreshold(Number(thresholdWrap.querySelector('#dd-threshold').value)-5));
+ thresholdWrap.querySelector('#dd-threshold-plus').addEventListener('click',()=>setThreshold(Number(thresholdWrap.querySelector('#dd-threshold').value)+5));
  const viewButton=make('button','dd-mobile-action');viewButton.type='button';viewButton.id='dd-printview-toggle';
  viewButton.onclick=()=>{state.printView=!state.printView;try{localStorage.setItem('niimbot-studio:printview',state.printView?'1':'0');}catch(e){}updateTemplateUiState();requestPreview();};
  previewHead.appendChild(viewButton);
@@ -1855,7 +1882,7 @@ function setupTabbedLayout(){
  removeImage.onclick=()=>{const entry=state.queue[state.selected];if(!entry)return;const id=imageForId(entry,state.activeImageId)?state.activeImageId:allImages(entry)[0]?.id;if(id)removeImageLayer(id);};
  selectedImageActions.append(cropImage,removeImage);image.appendChild(selectedImageActions);
  const bwRow=make('div','dd-row');moved(labelOf('dd-bw'),bwRow);image.appendChild(bwRow);
- image.appendChild(Object.assign(make('p','dd-caption'),{textContent:'Der Drucker kennt nur Schwarz und Weiß. „Foto – Rasterung“ stellt Graustufen durch feine Punkte dar. Die Vorschau zeigt in der Druckansicht genau das Druckergebnis.'}));
+ image.appendChild(Object.assign(make('p','dd-caption'),{textContent:'Der Drucker kennt nur Schwarz und Weiß. Bei „Schwarzweiß“ stellst du die Schwelle oben in der Vorschau ein („Schwelle“). „Foto – Rasterung“ stellt Graustufen durch feine Punkte dar. Die Druckansicht zeigt genau das Druckergebnis.'}));
  moved($('dd-image-panel'),image);
 
  // Text: editor + custom fonts.

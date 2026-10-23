@@ -7,7 +7,7 @@ Grundlage: V17 („Mehrbild, Ebenen, Rahmen“). Der gesamte Code (`index.html`,
 | # | Problem in V17 | Korrektur in V18 |
 |---|---|---|
 | 1 | **Vorschau ≠ Druck.** Der Treiber druckt jeden Pixel mit Helligkeit < 50 % schwarz, alles andere weiß. Die Vorschau zeigte aber Farben/Graustufen. Ein farbiges Foto wurde z. B. als schwarze Fläche gedruckt, Text darauf verschwand. | Neue **Druckansicht** (Standard): zeigt exakt das Druckbild in Schwarz/Weiß. Pro Bild wählbarer Druckmodus, neu **Foto – Rasterung** (Floyd-Steinberg-Dithering, berechnet in Druckauflösung). JPG-Fotos nutzen ihn automatisch. Der Drucker bekommt dasselbe 1-Bit-Bild wie die Vorschau. |
-| 2 | Bedienmodus „Graustufen“ / „Hartes Schwarzweiß“ wirkte nur auf die Vorschau bzw. falsch skaliert (Schwelle in Originalauflösung). Der Schwellen-Regler war immer aktiv, wirkte aber nur in einem Modus. | Schwelle wird in Druckauflösung angewendet; Regler ist nur bei „eigene Schwelle“ aktiv. Alte Vorlagen mit „Graustufen“ werden als „Foto – Rasterung“ gedruckt. |
+| 2 | Bedienmodus „Graustufen“ / „Hartes Schwarzweiß“ wirkte nur auf die Vorschau bzw. falsch skaliert (Schwelle in Originalauflösung). Der Schwellen-Regler im Tab „Bild“ war immer aktiv, wirkte aber nur in einem Modus. | Nur noch zwei Modi: Schwarzweiß und Foto – Rasterung. Die **Schwelle** sitzt jetzt in der Vorschau-Kopfzeile (zwischen Etikettname und „Druckansicht/Original“), wirkt in Druckauflösung auf das ausgewählte Bild und schaltet bei Bedarf die Druckansicht ein. Alte Vorlagen werden unverändert gedruckt. |
 | 3 | **Laptop:** Werkzeuge unter der Vorschau, sichtbar waren nur ~100 px – kaum bedienbar. | Ab 900 px Breite: Vorschau links, Werkzeuge rechts in voller Höhe. |
 | 4 | **iPhone:** Werkzeugbereich nur ~70 px hoch, Auswahllisten abgeschnitten („Niimbot“, „3 (mode“), Statuszeile halb abgeschnitten, Zoom-Schieber senkrecht (auf älteren iOS-Versionen nicht verlässlich). | Druckerleiste klappt nach dem Verbinden auf eine Zeile zusammen (`⚙ Drucker` öffnet sie), Werkzeugbereich ca. halbe Höhe und verstellbar, Zoom als `− 100% +` in der Vorschau, Statuszeile einzeilig. |
 | 5 | Zuschneide-Dialog auf dem iPhone: Knöpfe „Zurücksetzen/Übernehmen“ abgeschnitten. | Dialog passt in den Bildschirm, Knöpfe in einer Zeile. |
@@ -24,7 +24,9 @@ Grundlage: V17 („Mehrbild, Ebenen, Rahmen“). Der gesamte Code (`index.html`,
 
 ## Automatisierte Tests (Chromium, Playwright, simulierter Drucker)
 
-Alle Tests bestanden: **96 von 96** Prüfungen in 5 Durchläufen (iPhone 390 px, iPhone SE 375 px, Laptop 1366 px).
+Alle Tests bestanden: **136 von 136** Prüfungen in 7 Durchläufen (iPhone 390 px, iPhone SE 375 px, Laptop 1366 px).
+
+Schwellen-Test: Anteil schwarzer Pixel im Druckbild bei Schwelle 60 / 128 / 200 = 1,5 % / 14,6 % / 42 % – Vorschau und Druckbild ändern sich gleich, Druckbild bleibt reines Schwarz/Weiß, +/−, Rückgängig und eigene Werte je Bildebene funktionieren.
 
 Geprüft u. a.: Verbinden, Mehrbild-Import als Ebenen, PDF als einzelne Etiketten, defekte Datei, Text/Fett/Rundtext, Bildkorrekturen, Ausrichten/Drehen, 90°-Druckbereich (physisches Druckbild 576 × 354), Rückgängig/Wiederholen (auch beim Größenwechsel), Vorlage speichern/exportieren/importieren/in anderer Größe öffnen, eigene Schrift hochladen, Pfeiltasten (Laptop), Touch-Ziehen und Zwei-Finger-Zoom/Drehen (iPhone), Kopien, Dichte-Übergabe, Stopp während Stapeldruck, falsches Modell, Druckbild ist reines Schwarz/Weiß bzw. gerastert, keine horizontale Überbreite, keine JavaScript-Fehler.
 

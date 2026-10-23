@@ -38,9 +38,8 @@ Wenn das Update nicht sofort erscheint: Seite einmal neu laden (in Bluefy ggf. T
 
 Im Tab **Bild** pro Bild den **Druckmodus** wählen:
 
-- **Schwarzweiß – Standard:** für Logos, Text, Grafiken.
-- **Schwarzweiß – eigene Schwelle:** wie Standard, aber die Grenze zwischen Schwarz und Weiß ist einstellbar.
-- **Foto – Rasterung:** stellt Graustufen durch feine Punkte dar. JPG-Fotos verwenden diesen Modus automatisch.
+- **Schwarzweiß:** für Logos, Text, Grafiken. Die Grenze zwischen Schwarz und Weiß stellst du mit **Schwelle** oben in der Vorschau-Kopfzeile ein (zwischen Etikettname und „Druckansicht/Original“): höher = mehr Schwarz, niedriger = mehr Weiß. Die Schwelle gilt für das ausgewählte Bild; Standard ist 128.
+- **Foto – Rasterung:** stellt Graustufen durch feine Punkte dar. JPG-Fotos verwenden diesen Modus automatisch. Die Schwelle ist dann ausgegraut.
 
 ### Etikettgröße wechseln
 

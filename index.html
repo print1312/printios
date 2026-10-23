@@ -96,9 +96,17 @@ button{font:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transp
 /* ---------- Arbeitsbereich ---------- */
 #dd-addon .dd-workspace{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;gap:6px}
 #dd-addon .dd-preview-area{display:flex;flex-direction:column;flex:1 1 auto;min-height:140px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:5px;overflow:hidden}
-#dd-addon .dd-preview-head{display:flex;align-items:center;gap:5px;flex:0 0 auto;min-height:34px}
+#dd-addon .dd-preview-head{display:flex;flex-wrap:wrap;align-items:center;gap:5px;flex:0 0 auto;min-height:34px}
+@media (max-width:899px){#dd-addon .dd-threshold{order:9;flex:1 1 100%}#dd-addon .dd-threshold input[type=range]{flex:1 1 auto;width:auto}}
 #dd-addon #dd-preview-title{flex:1;min-width:0;margin:0 0 0 3px;font-size:.78rem;font-weight:700;color:#1b3b63;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #dd-addon .dd-preview-head button{min-height:32px;padding:3px 8px;font-size:.78rem;white-space:nowrap;flex:0 0 auto}
+#dd-addon .dd-threshold{display:flex;align-items:center;gap:4px;flex:0 1 auto;min-width:0;padding:1px 4px 1px 8px;border:1px solid var(--line);border-radius:99px;background:#f6f9fd}
+#dd-addon .dd-threshold[hidden]{display:none}
+#dd-addon .dd-threshold label{font-size:.76rem;font-weight:700;color:#304b68;white-space:nowrap}
+#dd-addon .dd-threshold input[type=range]{width:120px;min-width:60px;flex:1 1 120px;min-height:28px}
+#dd-addon .dd-threshold button{min-height:30px;min-width:30px;padding:0 6px;border:0;border-radius:99px;background:transparent;color:#174f8a;font-size:1rem}
+#dd-addon .dd-threshold output{min-width:28px;text-align:right;font-size:.78rem;font-weight:750;color:var(--blue);font-variant-numeric:tabular-nums}
+#dd-addon .dd-threshold.dd-off{opacity:.55}
 #dd-addon .dd-historybar{display:flex;gap:4px;align-items:center;margin:0;padding:0;border:0;background:none}
 #dd-addon .dd-historybar button{min-width:38px}
 #dd-addon #dd-history-status{display:none}
@@ -304,7 +312,7 @@ button{font:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transp
         <label>Startansicht<select id="dd-fit"><option value="contain">Einpassen</option><option value="cover">Füllen</option></select></label>
         <label>Kopien pro Seite<input id="dd-copies" type="number" value="1" min="1" max="30" inputmode="numeric"></label></div>
       <div class="dd-row"><label>Zoom %<input id="dd-zoom" class="dd-smallinput" type="number" min="5" max="4000" value="100" inputmode="numeric"></label>
-        <label>Druckmodus für dieses Bild<select id="dd-bw"><option value="default">Schwarzweiß – Standard (Logos, Text)</option><option value="bw">Schwarzweiß – eigene Schwelle</option><option value="dither">Foto – Rasterung (Graustufen)</option></select></label></div>
+        <label>Druckmodus für dieses Bild<select id="dd-bw"><option value="bw">Schwarzweiß (Logos, Text, Grafik)</option><option value="dither">Foto – Rasterung (Graustufen)</option></select></label></div>
       <div class="dd-panel" id="dd-image-panel"><h3>🎚️ Bild bearbeiten</h3>
         <div class="dd-imageadjusts">
           <div class="dd-adjustitem" data-adjust="exposure">
@@ -368,15 +376,6 @@ button{font:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transp
               <button id="dd-gamma-minus" type="button" aria-label="Gamma um 0.05 verringern">−</button>
               <input id="dd-gamma-number" type="number" min="0.25" max="3" step="0.05" value="1" inputmode="decimal" aria-label="Gamma: Zahlenwert">
               <button id="dd-gamma-plus" type="button" aria-label="Gamma um 0.05 erhöhen">+</button>
-            </div>
-          </div>
-          <div class="dd-adjustitem" data-adjust="threshold">
-            <label for="dd-threshold" class="dd-adjustlabel">Kontrast-Schwelle <output id="dd-threshold-value" class="dd-rangevalue">160</output></label>
-            <input id="dd-threshold" class="dd-adjustslider" type="range" min="0" max="255" step="1" value="160" aria-label="Kontrast-Schwelle: Schieberegler">
-            <div class="dd-adjuststepper" role="group" aria-label="Kontrast-Schwelle: präzise einstellen">
-              <button id="dd-threshold-minus" type="button" aria-label="Kontrast-Schwelle um 1 verringern">−</button>
-              <input id="dd-threshold-number" type="number" min="0" max="255" step="1" value="160" inputmode="decimal" aria-label="Kontrast-Schwelle: Zahlenwert">
-              <button id="dd-threshold-plus" type="button" aria-label="Kontrast-Schwelle um 1 erhöhen">+</button>
             </div>
           </div>
         </div>
