@@ -1,0 +1,1272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>niimbot — demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.4rem; }
+    #drv { font-size: .75rem; font-weight: normal; color: #555; vertical-align: middle;
+           border: 1px solid #bbb; border-radius: 6px; padding: 1px 6px; }
+    label { display: inline-block; margin: .4rem .6rem .4rem 0; }
+    select, input { padding: .3rem; }
+    button { padding: .6rem 1rem; font-size: 1rem; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    #status { margin-top: 1rem; font-family: monospace; white-space: pre-wrap; }
+    canvas { border: 1px solid #ccc; image-rendering: pixelated; max-width: 100%; margin-top: 1rem; }
+    .warn { color: #b00; }
+
+    /* Log panel. A phone has no console, so this is the only place a mobile
+       tester can read (and copy) the driver's `writeMode=` line. It must never
+       widen the page: long hex dumps wrap instead of scrolling sideways. */
+    #logbox { margin-top: 1.2rem; border: 1px solid #ccc; border-radius: 4px; padding: .5rem .6rem; }
+    #logbox summary { cursor: pointer; font-weight: 600; }
+    #logbox summary span { font-weight: 400; color: #666; }
+    .logctl { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .9rem; margin: .6rem 0 .5rem; }
+    .logctl button { padding: .4rem .7rem; font-size: .85rem; }
+    .logctl label { margin: 0; font-size: .85rem; }
+    /* The write-mode selector is operated ONE-HANDED ON A PHONE — that is the device
+       the iOS fast/paced measurement runs on. So: a native <select> (its picker opens
+       at the bottom of the screen, in thumb reach), a ≥44 px tap target, and 16 px
+       type, below which iOS Safari/WebKit zooms the page on focus. */
+    #optwritemode { min-height: 44px; font-size: 1rem; padding: .35rem .5rem; }
+    .logctl label.wm { display: flex; align-items: center; gap: .4rem; font-size: .95rem; }
+    #log {
+      margin: 0; padding: .5rem; background: #f6f6f6; border-radius: 3px;
+      font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .72rem; line-height: 1.4;
+      white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+      max-height: 45vh; overflow-y: auto; overflow-x: hidden;
+    }
+    #log .err { color: #b00; }
+    /* Buttons are long ("Print 3 dense labels (stress)") — let them wrap and
+       shrink rather than push the page wider than a ~380 px phone screen. */
+    button { max-width: 100%; white-space: normal; }
+    label input[type="text"], #text { max-width: 100%; }
+
+    /* Roll registration. Collapsed by default: this is occasional work, and open it
+       would push the print buttons off a phone screen. Everything here is sized for a
+       thumb — ≥44 px targets and 16 px type, below which iOS WebKit zooms on focus. */
+    #rollbox { margin-top: 1.2rem; border: 1px solid #ccc; border-radius: 4px; padding: .5rem .6rem; }
+    #rollbox summary { cursor: pointer; font-weight: 600; }
+    #rollbox summary span { font-weight: 400; color: #666; }
+    .rollctl { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; margin: .6rem 0; }
+    .rollctl button { min-height: 44px; font-size: .95rem; padding: .5rem .8rem; }
+    .rollform { display: flex; flex-wrap: wrap; gap: .3rem .8rem; }
+    .rollform label { display: flex; flex-direction: column; font-size: .8rem; color: #444; margin: .2rem 0; }
+    .rollform input { min-height: 44px; font-size: 1rem; padding: .3rem .5rem; box-sizing: border-box; }
+    .rollform input[type="number"] { width: 7rem; }
+    .muted { color: #666; font-size: .82rem; font-family: ui-monospace, Menlo, Consolas, monospace;
+             overflow-wrap: anywhere; }
+    #rollcalc { margin: .3rem 0 .2rem; }
+    #rollcalc .clamp { color: #b06000; }
+    #rolllist { margin-top: .6rem; }
+    .rollrow { display: flex; align-items: center; justify-content: space-between; gap: .5rem;
+               border-top: 1px solid #eee; padding: .45rem 0; font-size: .85rem; }
+    .rollrow code { font-family: ui-monospace, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+    .rollrow button { min-height: 36px; padding: .25rem .6rem; font-size: .8rem; flex: none; }
+    /* The JSON escape hatch: shown only when the clipboard refuses, or on Import. A
+       copy button that silently copies nothing is worse than none — you paste stale
+       clipboard content believing it is your data. */
+    #rolljson { display: none; width: 100%; box-sizing: border-box; min-height: 8rem; margin-top: .5rem;
+                font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .78rem; }
+  </style>
+</head>
+<body>
+  <h1>niimbot — print demo <span id="drv" title="driver version actually loaded in this tab"></span></h1>
+  <p>Prints a <strong>test label</strong> (frame + diagonals + text) straight
+     from the browser via Web Bluetooth. Requires <strong>Chrome/Edge</strong> on
+     desktop, <strong>Chrome</strong> on Android, or
+     <strong><a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank" rel="noopener">Bluefy</a></strong>
+     on iOS, where neither Safari nor Chrome support Web Bluetooth.</p>
+
+  <div>
+    <label>Model: <select id="model"></select></label>
+    <label>Label: <select id="size"></select></label>
+    <label title="Print heat, 1–5 — the same scale the official app shows. Applies to every print below.">Density: <select id="density"></select></label>
+    <label>Text: <input id="text" value="NIIMBOT TEST" size="16"></label>
+  </div>
+
+  <button id="identify">Connect &amp; identify printer</button>
+  <button id="disconnect">Disconnect</button>
+  <button id="readstatus">Read status</button>
+  <button id="print">Connect and print</button>
+  <button id="printreal" title="Frame, headings, text and a barcode band — what a real label looks like, and what it really costs to send.">Print realistic label</button>
+  <button id="print3copies" title="On the D110 this still uploads once, but the driver sends 3 separate jobs — that printer acks copies&gt;1 and only prints the first one.">Print 3 copies (1 upload)</button>
+  <button id="print3">Print 3-label batch</button>
+  <button id="print5">Print 5-label batch (normal)</button>
+  <button id="print3dense">Print 3 dense labels (stress)</button>
+  <button id="print5dense">Print 5 dense labels (stress)</button>
+  <div id="status"></div>
+  <canvas id="preview"></canvas>
+
+  <details id="rollbox">
+    <summary>Rolls <span id="rollcount">(0 saved)</span></summary>
+    <p class="muted">Fit a roll, read its tag, type the label's real size in mm, save.
+       The millimetres are remembered against the tag's barcode; the pixels come from
+       whichever printer is selected when the roll is restored on the next
+       <em>Connect &amp; identify</em>.</p>
+    <div class="rollctl">
+      <button id="rollread" type="button">Read tag</button>
+      <span id="rolltag" class="muted">no tag read yet</span>
+    </div>
+    <div class="rollform">
+      <label>Name <input id="rollname" type="text" placeholder="cable flag"></label>
+      <label>Width mm (across the head) <input id="rollw" type="number" step="0.1" min="1" inputmode="decimal"></label>
+      <label>Length mm (along the feed) <input id="rollh" type="number" step="0.1" min="1" inputmode="decimal"></label>
+      <label>Colour <input id="rollcolor" type="text" placeholder="white"></label>
+    </div>
+    <p class="muted">Narrow labels feed standing: a 15 &times; 50 roll is width 15, length 50.</p>
+    <div id="rollcalc" class="muted"></div>
+    <div class="rollctl">
+      <button id="rollsave" type="button">Save roll</button>
+      <button id="rollcopy" type="button">Copy JSON</button>
+      <button id="rollpaste" type="button">Import JSON</button>
+    </div>
+    <div id="rolllist"></div>
+    <textarea id="rolljson" spellcheck="false"></textarea>
+  </details>
+
+  <details id="logbox" open>
+    <summary>Log <span id="logcount">(0 lines)</span></summary>
+    <div class="logctl">
+      <button id="logcopy" type="button">Copy log</button>
+      <button id="logclear" type="button">Clear</button>
+      <label class="wm">Write mode:
+        <select id="optwritemode">
+          <option value="auto" selected>auto (detected)</option>
+          <option value="fast">fast (unacked, no gap)</option>
+          <option value="paced">paced (unacked + gap)</option>
+          <option value="acked">acked (with response)</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="optdebug"> DEBUG (packet dump)</label>
+    </div>
+    <pre id="log"></pre>
+  </details>
+
+  <script>
+    // Mirror console.log/.error into the panel above. Installed BEFORE the driver
+    // <script> so the very first line (the version banner) is captured, and it
+    // always forwards to the real console — this only adds a second sink.
+    (function () {
+      const pre = document.getElementById("log");
+      const counter = document.getElementById("logcount");
+      const real = { log: console.log.bind(console), error: console.error.bind(console) };
+      const MAX = 600;          // cap the DOM; a dense DEBUG run emits thousands
+      const lines = [];         // source of truth for "Copy log"
+
+      const fmt = (a) => {
+        if (typeof a === "string") return a;
+        if (a instanceof Error) return a.message;
+        try { return JSON.stringify(a); } catch (e) { return String(a); }
+      };
+      const stamp = () => {
+        const t = new Date();
+        const p = (n, w) => String(n).padStart(w || 2, "0");
+        return `${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}.${p(t.getMilliseconds(), 3)}`;
+      };
+
+      function append(kind, args) {
+        const text = stamp() + "  " + Array.prototype.map.call(args, fmt).join(" ");
+        lines.push(text);
+        const div = document.createElement("div");
+        if (kind === "error") div.className = "err";
+        div.textContent = text;
+        pre.appendChild(div);
+        while (lines.length > MAX) { lines.shift(); pre.removeChild(pre.firstChild); }
+        counter.textContent = `(${lines.length} line${lines.length === 1 ? "" : "s"})`;
+        pre.scrollTop = pre.scrollHeight;
+      }
+
+      console.log = function () { real.log.apply(console, arguments); append("log", arguments); };
+      console.error = function () { real.error.apply(console, arguments); append("error", arguments); };
+
+      // Uncaught failures would otherwise be invisible on a phone.
+      window.addEventListener("error", (e) => console.error("uncaught: " + (e.message || e)));
+      window.addEventListener("unhandledrejection", (e) => {
+        const r = e.reason;
+        console.error("unhandled rejection: " + ((r && r.message) || r));
+      });
+
+      document.getElementById("logclear").addEventListener("click", () => {
+        lines.length = 0; pre.textContent = ""; counter.textContent = "(0 lines)";
+      });
+
+      // Reading a trace off a phone screen is the whole problem, so copying it has
+      // to work. execCommand is the fallback for a non-secure context, where
+      // navigator.clipboard is undefined.
+      // Shared with the Rolls panel (window.demoCopyText) so there is ONE clipboard
+      // path to get right, not two. Returns whether it actually copied — callers must
+      // react to false, because a button that silently copies nothing is worse than no
+      // button: you paste stale clipboard content believing it is your data.
+      async function copyText(text) {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            return true;
+          }
+        } catch (e) { /* fall through to the legacy path */ }
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+        document.body.appendChild(ta);
+        ta.select();
+        let ok = false;
+        try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        return ok;
+      }
+      window.demoCopyText = copyText;
+
+      document.getElementById("logcopy").addEventListener("click", async () => {
+        const btn = document.getElementById("logcopy");
+        const ok = await copyText(lines.join("\n"));
+        btn.textContent = ok ? "Copied ✓" : "Copy failed";
+        setTimeout(() => { btn.textContent = "Copy log"; }, 1500);
+      });
+    })();
+  </script>
+
+  <script>
+    // Cache-bust the driver during development so edits always load (the dev
+    // server was returning 304s). Writes a <script> with a unique query string.
+    // label-memory.js and label-size.js are OPTIONAL add-ons: they never reference
+    // Niimbot, so load order does not matter and an app can take one, both or neither.
+    (function () {
+      const t = Date.now();
+      for (const f of ["niimbot", "label-memory", "label-size"]) {
+        document.write('<script src="' + f + '.js?t=' + t + '"><\/script>');
+      }
+    })();
+  </script>
+  <script>
+  (async function () {
+    const $ = (id) => document.getElementById(id);
+    const status = (s) => { $("status").textContent = s; };
+    // Errors go to the log panel as well as the status line: on a phone the panel
+    // is the only readable — and copyable — trace. (Progress deliberately does not,
+    // or the one line that matters drowns in percentages.)
+    const fail = (e) => {
+      const m = (e && e.message) || e;
+      console.error("error: " + m);
+      status("error: " + m);
+    };
+
+    document.title = "niimbot demo — driver " + (Niimbot.VERSION || "?");
+    console.log("[demo] loaded Niimbot driver version:", Niimbot.VERSION);
+    // ON SCREEN, not just in the title and the log. A tab left open across a deploy
+    // keeps running the driver it loaded (the ?t= cache-buster is resolved once, at
+    // page load), and a stale tab fails by being SUBTLY OLD, not by breaking: on
+    // 2026-08-14 one silently ignored the brand-new `density` option and printed five
+    // identical labels, which was then explained as a printer behaviour. The version
+    // was in the log the whole time. Costs a glance now.
+    $("drv").textContent = "v" + (Niimbot.VERSION || "?");
+
+    // Both controls exist so a mobile tester can drive them without a console.
+    // DEBUG starts off on purpose: its packet dump buries the `writeMode=` line
+    // (which is why that line is NOT gated behind DEBUG in the driver).
+    Niimbot.DEBUG = false;
+    $("optdebug").checked = Niimbot.DEBUG;
+    $("optdebug").addEventListener("change", () => {
+      Niimbot.DEBUG = $("optdebug").checked;
+      console.log("[demo] Niimbot.DEBUG =", Niimbot.DEBUG);
+    });
+    // Write mode: the four-way override (replaces 1.4.0's FORCE_PACING checkbox, which
+    // could only force pacing ON). Read per write, so changing it mid-connection takes
+    // effect on the next write — no reconnect. The select's values are exactly what
+    // Niimbot.WRITE_MODE accepts ("auto" being its spelling of null), and the driver
+    // logs the resulting EFFECTIVE mode itself, which is the line to read.
+    $("optwritemode").value = Niimbot.WRITE_MODE || "auto";
+    $("optwritemode").addEventListener("change", () => {
+      try {
+        Niimbot.WRITE_MODE = $("optwritemode").value;
+      } catch (e) {                       // can't happen from the <select>; never fail silently
+        fail(e);
+        $("optwritemode").value = Niimbot.WRITE_MODE || "auto";
+      }
+    });
+
+    if (!Niimbot.isSupported()) {
+      // Same split as src/niimbot.js's connect() throw: `!navigator.bluetooth` alone
+      // doesn't say WHY, and telling everyone to check HTTPS sent a real user
+      // (already on HTTPS) looking in the wrong
+      // place — their browser (Brave) just doesn't expose the API. `isSecureContext` is
+      // the one signal the browser itself gates on, so it's what tells the two apart.
+      $("status").innerHTML = window.isSecureContext
+        ? '<span class="warn">This browser doesn\'t expose Web Bluetooth (the page is secure, so that\'s not the issue). Use Chrome, Edge or Opera on desktop, or Chrome on Android — Brave and some other Chromium builds ship Web Bluetooth off by default, behind a flag. On iOS use <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank" rel="noopener">Bluefy</a>, since Safari and Chrome do not support Web Bluetooth there.</span>'
+        : '<span class="warn">Web Bluetooth unavailable. Use Chrome/Edge (desktop) or Chrome (Android) over HTTPS or localhost, or on iOS use <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank" rel="noopener">Bluefy</a>, since Safari and Chrome do not support Web Bluetooth there.</span>';
+      $("print").disabled = true;
+    }
+
+    // Storage keys. Declared here because populateSizes() below reads the custom sizes
+    // at load time, and a `const` used before its declaration throws (TDZ).
+    // The label-memory key is kept verbatim from the inline version this replaced, so
+    // rolls already learned on a device survive the change. Per-app on purpose: two
+    // apps on one origin share one localStorage, and this Pages site hosts more than
+    // one page — the module requires the key for exactly that reason.
+    const LABEL_MEMORY_KEY = "niimbot-demo:size-by-barcode";
+    const CUSTOM_SIZE_KEY = "niimbot-demo:custom-sizes";
+
+    const reg = await fetch("registry.json").then((r) => r.json());
+    for (const [k, m] of Object.entries(reg.models)) {
+      const o = new Option(m.label, k, k === reg.default_model, k === reg.default_model);
+      $("model").add(o);
+    }
+
+    // Sizes the user defined in the Rolls panel, kept beside the shipped registry
+    // rather than merged into it: `registry.json` is data that ships with the library,
+    // and promoting a size into it is a deliberate step, not a side effect of someone
+    // typing millimetres on their phone. Read through the same guarded pattern as the
+    // label memory — a storage failure must cost the custom sizes, never the print.
+    function customSizes() {
+      try {
+        const m = JSON.parse(localStorage.getItem(CUSTOM_SIZE_KEY) || "{}");
+        return m && typeof m === "object" && !Array.isArray(m) ? m : {};
+      } catch (e) { return {}; }
+    }
+    function saveCustomSizes(map) {
+      try { localStorage.setItem(CUSTOM_SIZE_KEY, JSON.stringify(map)); return true; }
+      catch (e) { console.error("[rolls] could not save sizes: " + ((e && e.message) || e)); return false; }
+    }
+    // Registry first, so a custom entry can never shadow a shipped one by accident.
+    const allSizes = () => Object.assign({}, reg.sizes, customSizes());
+
+    // Sizes are calibrated per dpi, so only offer those matching the selected
+    // model (a B1 50×30 has different pixels than a B1 Pro 50×30). Keep the
+    // current pick if it's still valid, else fall back to the default/first.
+    function populateSizes() {
+      const dpi = reg.models[$("model").value].dpi;
+      const prev = $("size").value;
+      const custom = customSizes();
+      $("size").innerHTML = "";
+      let selected = null;
+      for (const [k, s] of Object.entries(allSizes())) {
+        if (s.dpi != null && dpi != null && s.dpi !== dpi) continue;
+        $("size").add(new Option(custom[k] ? s.label + " ★" : s.label, k));
+        if (k === prev || (selected === null && k === reg.default_size)) selected = k;
+      }
+      if (!$("size").options.length) {                 // no size at all for this dpi
+        $("size").add(new Option("— no size for this model —", ""));
+      }
+      $("size").value = selected || $("size").options[0].value;
+    }
+    populateSizes();
+
+    // Density (print heat), 1–5. Per PRINT, not per model: the model's value is only
+    // the starting point, which is why changing model resets the picker instead of
+    // carrying a number over to a printer it was never chosen for. Measured on a D11_H
+    // 2026-08-14 — the printer stores it (`0x40[0x01]` reads back what `0x21` set) and
+    // acts on it (same 139-row image took 1320 ms at 3 and 1562 ms at 5: more heat,
+    // more dwell per line, slower head). See docs/NOTES.md.
+    function populateDensity() {
+      const def = reg.models[$("model").value].density;
+      $("density").innerHTML = "";
+      for (let d = 1; d <= 5; d++) {
+        $("density").add(new Option(d === def ? `${d} (model default)` : String(d), String(d)));
+      }
+      $("density").value = String(def);
+    }
+    populateDensity();
+    // Every print path reads this. NOT defaulted in the driver — passing it explicitly
+    // is what makes the picker mean anything.
+    const density = () => Number($("density").value);
+
+    $("model").addEventListener("change", () => { populateSizes(); populateDensity(); refresh(); });
+
+    // Width clips as silently as height does: a canvas draws past its own edge without
+    // an error, so an oversized string just loses its ends on the paper. Both draw
+    // functions size their text from `h_px`, so on a PORTRAIT label (T14x50 is 96 × 400)
+    // the height-derived size is far wider than the label — hence: shrink until it fits.
+    // Sets `ctx.font` to the size it chose and returns it. Floor of 6 px, below which a
+    // wrong-looking label beats an unreadable one.
+    function fitFont(ctx, txt, px, maxW, bold) {
+      const font = (n) => `${bold ? "bold " : ""}${n}px sans-serif`;
+      let fs = Math.round(px);
+      ctx.font = font(fs);
+      while (fs > 6 && ctx.measureText(txt).width > maxW) { fs -= 1; ctx.font = font(fs); }
+      return fs;
+    }
+
+    // `light` skips the corner-to-corner diagonals. The diagonals touch nearly every
+    // row, so they defeat run-length and blow the packet count up to ~one-per-row
+    // (worst case for send time). A realistic label (frame + text, mostly white)
+    // collapses to a few dozen packets — use light=true to validate continuous
+    // multi-label flow without the pathological diagonals.
+    function drawTest(size, text, target, light) {
+      const c = target || $("preview");
+      c.width = size.w_px; c.height = size.h_px;
+      const x = c.getContext("2d");
+      x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height);
+      x.strokeStyle = "#000"; x.lineWidth = 3;
+      const m = size.margin || 10;
+      x.strokeRect(m, m, c.width - 2 * m, c.height - 2 * m);
+      if (!light) {
+        x.beginPath();
+        x.moveTo(m, m); x.lineTo(c.width - m, c.height - m);
+        x.moveTo(c.width - m, m); x.lineTo(m, c.height - m);
+        x.stroke();
+      }
+      x.fillStyle = "#000";
+      // h_px * 0.16 is the STARTING size — it is what makes the label look the same on
+      // every landscape size — and `fitFont` only takes it down if the text is too wide
+      // for the frame. The text is centred, so the drawable width is the same margin the
+      // frame uses, on both sides.
+      fitFont(x, text, size.h_px * 0.16, c.width - 2 * m, true);
+      x.textAlign = "center"; x.textBaseline = "middle";
+      x.fillText(text, c.width / 2, c.height / 2);
+      return c;
+    }
+
+    // What people actually print, and therefore the only honest answer to "how long
+    // does a label take?". `drawTest` without `light` is the WORST case — its diagonals
+    // touch nearly every row and defeat run-length, so a 40×60 needed 589 writes (one
+    // per row) and 7.0 s to upload against 1.1 s to print, on a Mac at 10 ms/write.
+    // This one is deliberately ordinary: frame, heading, two data lines, a barcode band.
+    // Every band is a run of IDENTICAL rows, which is exactly what run-length collapses.
+    //
+    // Sizes are fractions of h_px, so there is no per-size layout: one set of ratios
+    // covers every label in the registry. That works for the VERTICAL rhythm on any
+    // label, and for width only on landscape ones — h_px says nothing about how wide the
+    // paper is, and on a portrait label (T14x50 is 96 wide by 400 tall) a fraction of the
+    // height is wider than the whole label. Width is handled separately, by `fitFont`
+    // shrinking each line; keeping the ratios is still the design.
+    // Both directions clip in silence if unchecked, so both are guarded: a cursor refuses
+    // to run past the bottom rather than letting the canvas clip, which is how a 354 px
+    // card once printed 365 px of content and lost the last line's descenders
+    // (docs/NOTES.md).
+    function drawReal(size, text, target) {
+      const c = target || $("preview");
+      c.width = size.w_px; c.height = size.h_px;
+      const W = c.width, H = c.height, m = size.margin || 10;
+      const x = c.getContext("2d");
+      x.fillStyle = "#fff"; x.fillRect(0, 0, W, H);
+      x.strokeStyle = "#000"; x.lineWidth = Math.max(2, Math.round(H * 0.005));
+      x.strokeRect(m, m, W - 2 * m, H - 2 * m);
+
+      const pad = m + Math.round(W * 0.05);
+      let y = m + Math.round(H * 0.04);
+      const fit = (px, what) => {
+        if (y + px > H - m) throw new Error(`"${what}" does not fit this label: ${y + px} > ${H - m} px`);
+        const at = y; y += px; return at;
+      };
+      // A 15 mm label is only 144 px wide, so "NIIMBOT TEST" at the heading size would
+      // run off the right edge with no error — see `fitFont`. Shrink to fit, but reserve
+      // the ORIGINAL height so shrinking one line never shifts the ones below it. The
+      // text is left-aligned from `pad`, which is wider than the frame margin `m`.
+      const put = (txt, px, bold) => {
+        fitFont(x, txt, px, W - 2 * pad, bold);
+        const at = fit(Math.round(px * 1.35), txt);
+        x.fillStyle = "#000";
+        x.textAlign = "left"; x.textBaseline = "top";
+        x.fillText(txt, pad, at);
+      };
+
+      put(text || "NIIMBOT", H * 0.095, true);
+      const rule = fit(Math.round(H * 0.03), "rule");
+      x.fillRect(pad, rule, W - 2 * pad, Math.max(2, Math.round(H * 0.006)));
+      put(`${size.w_mm || "?"} × ${size.h_mm || "?"} mm · ${size.dpi || "?"} dpi`, H * 0.05);
+      put(`${W} × ${H} px · density ${density()}`, H * 0.05);
+
+      // A barcode band: bar widths derived from the text so the same text always
+      // prints the same bars. Not a real symbology — this measures send cost and
+      // legibility, and claiming it scans would be a lie a scanner would catch.
+      const bh = Math.round(H * 0.22), top = fit(bh + Math.round(H * 0.02), "barcode");
+      let seed = 7;
+      for (const ch of (text || "NIIMBOT")) seed = (seed * 31 + ch.charCodeAt(0)) & 0xffff;
+      const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+      const unit = Math.max(2, Math.round(W * 0.006));
+      for (let bx = pad; bx < W - pad - unit; ) {
+        const w = unit * (1 + Math.floor(rnd() * 3));
+        x.fillRect(bx, top, Math.min(w, W - pad - bx), bh);
+        bx += w + unit * (1 + Math.floor(rnd() * 2));
+      }
+      put(new Date().toISOString().slice(0, 16).replace("T", " "), H * 0.045);
+      return c;
+    }
+
+    // Worst case for the driver: random 1px noise makes every row a unique 0x85
+    // row (no run-length savings) with ~half its bytes set — maximum data volume
+    // and maximum bytes buffered ahead. A big readable number stays on top so you
+    // can still confirm order and that the label printed intact.
+    function drawDense(size, label, target) {
+      const c = target || $("preview");
+      c.width = size.w_px; c.height = size.h_px;
+      const x = c.getContext("2d");
+      const img = x.createImageData(c.width, c.height);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = Math.random() < 0.5 ? 0 : 255;
+        d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255;
+      }
+      x.putImageData(img, 0, 0);
+      // White plate + black number so it survives the noise and stays legible.
+      const fs = Math.round(size.h_px * 0.5);
+      x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height * 0.55);
+      x.fillStyle = "#000"; x.font = `bold ${fs}px sans-serif`;
+      x.textAlign = "center"; x.textBaseline = "middle";
+      x.fillText(label, c.width / 2, c.height * 0.28);
+      return c;
+    }
+
+    function refresh() {
+      const size = allSizes()[$("size").value];
+      drawTest(size, $("text").value);
+    }
+    $("size").addEventListener("change", refresh);
+    $("text").addEventListener("input", refresh);
+    refresh();
+
+    // ── Label memory: the size, remembered per RFID barcode ─────────────────────
+    // The tag identifies the roll (`barCode`) but does NOT carry its dimensions —
+    // the official app looks those up on Niimbot's server. So rather than curate a
+    // barcode→size table that can only ever cover rolls we have seen, we LEARN:
+    // whatever size the user actually printed with on a given barcode is what gets
+    // pre-selected the next time that roll shows up (niim.blue does the same).
+    //
+    // This lives in the demo and NOT in src/niimbot.js on purpose: the driver reads
+    // no config and owns no UI — it takes the model and the size from the caller
+    // (src/niimbot.js:1-21). It already exposes everything needed for this, via
+    // getStatus().decoded.rfid.barCode.
+    // The key is per-app on purpose and has no default in the module: two apps on one
+    // origin share one localStorage, and this Pages site hosts more than one page.
+    // Kept verbatim from the inline version this replaced, so rolls already learned on
+    // a device survive the change.
+
+    // Storage lives in src/label-memory.js now — an optional file any app can load,
+    // instead of ~40 lines every caller retypes (and gets the try/catch wrong).
+    const labelMemory = NiimbotLabelMemory.create({ key: LABEL_MEMORY_KEY });
+
+    window.labelMemory = labelMemory;
+
+    // The `consumablesType` enum, which is the same one the driver sends in
+    // SetLabelType (`model.label_type`, src/niimbot.js:683) — per the NIIMBOT
+    // Community Wiki. Used only to WARN; see reviewTag below.
+    const LABEL_TYPES = {
+      1: "with gaps", 2: "black", 3: "continuous", 4: "perforated",
+      5: "transparent", 6: "PVC tag", 10: "black mark gap", 11: "heat-shrink tube",
+    };
+
+    // Read a getStatus() result and, when a tag is present, report what we know and
+    // (with `autoSelect`) restore the remembered size. Says everything in the log
+    // panel: a SILENT auto-selection is worse than none, because the user stops
+    // checking the dropdown. Returns the barcode, or null when there is nothing to
+    // work with — `decoded` can be null, and `decoded.rfid` can be null (the printer
+    // never answered RfidInfo, normal on many models) or `{ tagPresent: false }`
+    // (no roll fitted). All three are ordinary cases, not errors.
+    function reviewTag(st, autoSelect) {
+      const rfid = st && st.decoded && st.decoded.rfid;
+      if (!rfid) {
+        console.log("[label-memory] printer sent no RFID info — no label memory for this roll.");
+        return null;
+      }
+      if (!rfid.tagPresent || !rfid.barCode) {
+        console.log("[label-memory] no consumable tag detected — no label memory for this roll.");
+        return null;
+      }
+      const bc = rfid.barCode;
+
+      // Cross-check the label TYPE. We warn and stop there: `consumablesType` is
+      // marked `inferred` in the driver's evidence map (only ever observed as 1), so
+      // it is not solid enough to override what the caller asked for — and blocking
+      // a print on an inferred field would be worse than a wrong guess.
+      const want = reg.models[$("model").value].label_type;
+      const got = rfid.consumablesType;
+      if (got != null && want != null && got !== want) {
+        console.error(
+          `[label-memory] ⚠ tag ${bc} reports label type ${got} (${LABEL_TYPES[got] || "unknown"}), but model `
+          + `"${$("model").value}" prints with type ${want} (${LABEL_TYPES[want] || "unknown"}). Nothing changed — `
+          + `consumablesType is "inferred", so check the roll yourself.`);
+      }
+
+      sessionTagBc = bc;
+
+      // recall() returns a RECORD ({ w_mm, h_mm, color, … }, or legacy { size, … }) or
+      // null — not a bare size id. The roll is remembered in millimetres; sizeForRoll()
+      // turns that into the size id for the CURRENTLY SELECTED printer. Without autoSelect
+      // nothing may be created, so the lookup only reports what already exists.
+      const rec = labelMemory.recall(bc);
+      const mm = rec && rollMm(rec);
+      const mmText = mm ? `${mm.w_mm} × ${mm.h_mm} mm` : null;
+      const colour = rec && rec.color ? ` [${rec.color}]` : "";
+      const cur = $("size").value;
+      if (!rec) {
+        console.log(`[label-memory] tag ${bc}: no size remembered — keeping "${cur}". It is learned from the next successful print, or from the Rolls panel.`);
+        return bc;
+      }
+      const resolved = sizeForRoll(rec, autoSelect);
+      if (!resolved) {
+        console.log(`[label-memory] tag ${bc}: remembered ${mmText || `size "${rec.size}"`}${colour}, but the selected model has no matching size${autoSelect ? "" : " yet (selecting the roll would create one)"} — keeping "${cur}".`);
+        return bc;
+      }
+      if (!autoSelect) {
+        console.log(`[label-memory] tag ${bc}: remembered ${mmText || `size "${rec.size}"`}${colour} → "${resolved}" on the selected model (currently selected: "${cur}").`);
+        return bc;
+      }
+      if (cur !== resolved) {
+        $("size").value = resolved;
+        refresh();
+      }
+      const s = allSizes()[resolved];
+      console.log(`[label-memory] tag ${bc}: ${mmText ? mmText + " → " : ""}selected "${resolved}"${s ? ` (${s.label})` : ""}${colour} — remembered from a previous print on this roll.`);
+      return bc;
+    }
+
+    // The roll's physical size: its own w_mm/h_mm, else (legacy record) its size's.
+    function rollMm(rec) {
+      const ok = (v) => typeof v === "number" && isFinite(v) && v > 0;
+      if (ok(rec.w_mm) && ok(rec.h_mm)) return { w_mm: rec.w_mm, h_mm: rec.h_mm };
+      const s = rec.size && allSizes()[rec.size];
+      if (s && ok(s.w_mm) && ok(s.h_mm)) return { w_mm: s.w_mm, h_mm: s.h_mm };
+      return null;
+    }
+
+    // The ONE resolver from a roll to a size id for the CURRENTLY SELECTED model, or null.
+    // A roll is physical and fits any dpi; pixels belong to a printer. With `create` false
+    // (a read-only report) it never writes a custom size and returns null instead.
+    function sizeForRoll(rec, create) {
+      if (create === undefined) create = true;
+      const mk = $("model").value;
+      const model = reg.models[mk];
+      const offered = (id) => Array.prototype.some.call($("size").options, (o) => o.value === id);
+      const mm = rollMm(rec);
+      if (!mm) return rec.size && offered(rec.size) ? rec.size : null;
+      const same = (a, b) => Math.abs(a - b) < 1e-6;
+      const shipped = Object.keys(reg.sizes).filter((k) => {
+        const z = reg.sizes[k];
+        return same(z.w_mm, mm.w_mm) && same(z.h_mm, mm.h_mm) && offered(k);
+      });
+      // b. a size made for exactly this model (it carries the per-model offsets)
+      const own = shipped.find((k) => k.endsWith("_" + mk));
+      if (own) return own;
+      // c. same mm and dpi, not suffixed for a different model. T15x50 has no suffix but
+      // is the D110's — an acceptable fallback, hence the log line.
+      const generic = shipped.find((k) => {
+        const m = k.match(/_([^_]+)$/);
+        return reg.sizes[k].dpi === model.dpi && !(m && reg.models[m[1]] && m[1] !== mk);
+      });
+      if (generic) {
+        console.log(`[rolls] ${mm.w_mm} × ${mm.h_mm} mm on "${mk}": using the shipped "${generic}" (${reg.sizes[generic].dpi} dpi, no size made for this model).`);
+        return generic;
+      }
+      // d. a custom size keyed by MODEL, not dpi: the B1 Pro and the B2 Pro are both
+      // 300 dpi with different heads.
+      const id = `C${mm.w_mm}x${mm.h_mm}_${mk}`.replace(/\./g, "_");
+      if (offered(id)) return id;
+      if (!create) return null;
+      const geom = NiimbotLabelSize.sizeFromMm({
+        w_mm: mm.w_mm, h_mm: mm.h_mm, dpi: model.dpi, printhead_px: PRINTHEAD_PX[mk],
+      });
+      const sizes = customSizes();
+      if (!sizes[id]) {
+        sizes[id] = {
+          label: `${mm.w_mm} × ${mm.h_mm} mm`,
+          w_mm: mm.w_mm, h_mm: mm.h_mm, w_px: geom.w_px, h_px: geom.h_px, dpi: model.dpi,
+          margin: 10,
+        };
+        if (!saveCustomSizes(sizes)) { status("Rolls: could not save the size (storage refused)."); return null; }
+        console.log(`[rolls] created custom size "${id}": ${geom.w_px} × ${geom.h_px} px at ${model.dpi} dpi.`);
+        if (geom.clamped) {
+          console.warn(`[rolls] ⚠ "${id}": width clamped from ${geom.label_px} px to the ${mk} printhead (${geom.w_px} px) — the label's outer edge will not print.`);
+        }
+      }
+      populateSizes();
+      return offered(id) ? id : null;
+    }
+
+    // A changed model means the same roll needs that printer's pixels: re-resolve it.
+    let sessionTagBc = null;       // barcode of the last tag read or reviewed this session
+    $("model").addEventListener("change", () => {
+      if (sessionTagBc) reviewTag({ decoded: { rfid: { tagPresent: true, barCode: sessionTagBc } } }, true);
+    });
+    // Exposed for the same reason as labelMemory: with a hand-made getStatus()
+    // result — reviewTag({ decoded: { rfid: { tagPresent: true, barCode: "X",
+    // consumablesType: 1 } } }, true) — the auto-select path can be exercised from
+    // the console with no printer attached.
+    window.reviewTag = reviewTag;
+
+    // ── Roll registration ───────────────────────────────────────────────────────
+    // Registering a roll used to mean pasting a snippet into the desktop DevTools
+    // console. That is unusable for a shelf of rolls and impossible on the phone
+    // (Bluefy has no console) — which is the device where rolls actually get swapped.
+
+    // Printhead width per model, in pixels — the width the roll calculator clamps to.
+    // NOT derivable from dpi: the M2-H and the B1 Pro are both 300 dpi with different
+    // heads. EVERY model key in registry.json must have a row here: a missing key hands
+    // printhead_px: undefined to sizeFromMm(), which then never reports a clamp — a check
+    // that answers "fine" because it could not check.
+    //
+    // The rows do NOT all have the same standing, and saying which is which is the whole
+    // point of this comment:
+    //
+    //   REAL head widths (four):
+    //     b2pro 576, d11h 144 — the PRINTER REPORTS THESE ITSELF, probe(0xDC, [0x03])
+    //       bytes 4-5, and both are corroborated on paper (docs/NOTES.md § The printer
+    //       reports its own printhead width — dc[03], bytes 4-5).
+    //     n1 96, d110 96 — measured by print comparison: bands of increasing width stop
+    //       getting wider at the head (registry.json's T14x50 and T15x50 _note fields).
+    //
+    //   UPSTREAM value, NOT measured: d110m 96 — niimbluelib's printheadPixels for the
+    //     D110_M; that printer was identified but never printed here.
+    //
+    //   NOT verified head widths (three): b1pro 584, b1 384, m2h 567. These predate this
+    //     map having any stated meaning; nobody has probed a head on them.
+    //     m2h 567 is demonstrably NOT the head — that printer reports 576 via dc[03], and
+    //       567 is a deliberate ribbon margin (registry.json's T50x30_m2h _note: the M2-H
+    //       is thermal TRANSFER, the ribbon drifts, and ~1.4 mm of right margin absorbs it).
+    //     b1pro — whether the B1 Pro's head is 567 or 584 is still an open question
+    //       (Vikunja #970; docs/NOTES.md § Printhead width: one contradiction resolved,
+    //       one still open). It is answerable with NO labels at all: run
+    //       probe(0xDC, [0x03]) on a B1 Pro and read bytes 4-5.
+    //
+    // Leave those three values ALONE. Correcting them is a separate, hardware-backed
+    // decision, not a drive-by edit — and this map is not the place to record one, since
+    // registry.json has no printhead field yet.
+    const PRINTHEAD_PX = { b1pro: 584, b1: 384, m2h: 567, d110: 96, d110m: 96, b2pro: 576, d11h: 144, n1: 96 };
+
+    let lastTag = null;              // filled by "Read tag" — the barcode is never typed
+
+    const rollNum = (id) => {
+      const v = parseFloat($(id).value);
+      return isFinite(v) && v > 0 ? v : null;
+    };
+
+    // Geometry for what is currently typed, or null while the form is incomplete.
+    function currentGeom() {
+      const w = rollNum("rollw"), h = rollNum("rollh");
+      const model = reg.models[$("model").value];
+      if (!w || !h || !model) return null;
+      return NiimbotLabelSize.sizeFromMm({
+        w_mm: w, h_mm: h, dpi: model.dpi, printhead_px: PRINTHEAD_PX[$("model").value],
+      });
+    }
+
+    // Show the pixels live, and SAY when the width was clamped to the printhead. A
+    // silent clamp is how a label quietly loses its right edge: the printer prints
+    // columns 0…W-1 and drops the rest.
+    function showCalc() {
+      const g = currentGeom();
+      if (!g) { $("rollcalc").textContent = "enter width and height in mm"; return; }
+      $("rollcalc").textContent = `On ${$("model").selectedOptions[0].text}: ${g.w_px} × ${g.h_px} px, stride ${g.stride}`;
+      if (g.clamped) {
+        const lost = ((g.label_px - g.w_px) / (reg.models[$("model").value].dpi / 25.4)).toFixed(1);
+        const span = document.createElement("span");
+        span.className = "clamp";
+        span.textContent = ` — width clamped from ${g.label_px} px to the `
+          + `${$("model").selectedOptions[0].text} printhead (${g.w_px}); `
+          + `the label's outer ~${lost} mm will not print`;
+        $("rollcalc").appendChild(span);
+      }
+    }
+    ["rollw", "rollh"].forEach((id) => $(id).addEventListener("input", showCalc));
+    $("model").addEventListener("change", showCalc);
+    showCalc();
+
+    function renderRolls() {
+      const rolls = labelMemory.all();
+      const custom = customSizes();
+      const keys = Object.keys(rolls);
+      $("rollcount").textContent = `(${keys.length} saved)`;
+      $("rolllist").innerHTML = "";
+      for (const bc of keys) {
+        const r = rolls[bc];
+        // Millimetres, never dpi or px: those belong to a printer, not to the roll.
+        const mm = rollMm(r);
+        const row = document.createElement("div");
+        row.className = "rollrow";
+        // Built with DOM APIs, never innerHTML. `bc`, `name`, `color` and the size
+        // label are all untrusted: the Import JSON button exists precisely so this data
+        // can arrive from another device or another person, and this page holds a Web
+        // Bluetooth connection to a printer. textContent makes the whole class of
+        // injection impossible here rather than relying on escaping it correctly.
+        const txt = document.createElement("div");
+        const code = document.createElement("code");
+        code.textContent = bc;
+        txt.appendChild(code);
+        txt.appendChild(document.createTextNode(
+          " → " + (r.name ? r.name + " · " : "")
+          + (mm ? `${mm.w_mm} × ${mm.h_mm} mm` : r.size)
+          + (r.color ? " · " + r.color : "")
+        ));
+        if (!mm) {
+          const w = document.createElement("span");
+          w.className = "warn";
+          w.textContent = " (size not defined here)";
+          txt.appendChild(w);
+        }
+        const del = document.createElement("button");
+        del.type = "button";
+        del.textContent = "Forget";
+        del.addEventListener("click", () => {
+          labelMemory.forget(bc);
+          console.log(`[rolls] forgot tag ${bc}.`);
+          renderRolls();
+        });
+        row.appendChild(txt); row.appendChild(del);
+        $("rolllist").appendChild(row);
+      }
+      if (!keys.length) {
+        $("rolllist").innerHTML = '<p class="muted">nothing saved yet</p>';
+      }
+      // Custom sizes outlive the rolls that introduced them (a roll can be forgotten
+      // while its size stays in use), so they are counted separately rather than
+      // silently vanishing.
+      const nCustom = Object.keys(custom).length;
+      if (nCustom) {
+        $("rollcount").textContent = `(${keys.length} saved, ${nCustom} custom size${nCustom === 1 ? "" : "s"})`;
+      }
+    }
+
+    $("rollread").addEventListener("click", async () => {
+      $("rollread").disabled = true;
+      try {
+        // A real B1 Pro drops RfidInfo answers when polled in quick succession — the
+        // tag reads fine, then the next request 3 s later returns nothing (observed
+        // 2026-08-13). The default 600 ms wait is tuned for not hanging a connect, not
+        // for this button, where the user is asking for the tag and will wait. So:
+        // longer wait, and one retry before declaring there is no roll.
+        let rfid = null;
+        for (let attempt = 1; attempt <= 2 && !rfid; attempt++) {
+          const st = await Niimbot.getStatus({ rfidTimeoutMs: 1500 });
+          const r = st && st.decoded && st.decoded.rfid;
+          if (r && r.tagPresent && r.barCode) { rfid = r; break; }
+          if (attempt === 1) {
+            console.log("[rolls] no tag in the first read — retrying once (the printer drops RfidInfo when polled quickly).");
+            await new Promise((r2) => setTimeout(r2, 400));
+          }
+        }
+        if (!rfid) {
+          lastTag = null;
+          $("rolltag").textContent = "no tag detected — is a roll fitted and the lid closed?";
+          console.log("[rolls] no consumable tag detected after 2 attempts.");
+          return;
+        }
+        lastTag = rfid;
+        sessionTagBc = rfid.barCode;
+        $("rolltag").textContent = `${rfid.barCode} · serial ${rfid.serialNumber || "?"} · ${rfid.capacity != null ? rfid.capacity + " labels" : "capacity ?"}`;
+        console.log(`[rolls] tag ${rfid.barCode} read (serial ${rfid.serialNumber || "?"}).`);
+        // Pre-fill from what is already known about this roll, so re-saving does not
+        // mean retyping — and so a mistake is visible before it is overwritten.
+        const known = labelMemory.recall(rfid.barCode);
+        if (known) {
+          if (known.name) $("rollname").value = known.name;
+          if (known.color) $("rollcolor").value = known.color;
+          const kmm = rollMm(known);
+          if (kmm) { $("rollw").value = kmm.w_mm; $("rollh").value = kmm.h_mm; showCalc(); }
+          console.log(`[rolls] already known as ${kmm ? kmm.w_mm + " × " + kmm.h_mm + " mm" : `"${known.size}"`}${known.color ? " (" + known.color + ")" : ""}.`);
+        }
+      } catch (e) {
+        lastTag = null;
+        $("rolltag").textContent = "could not read the tag";
+        fail(e);
+      } finally {
+        $("rollread").disabled = false;
+      }
+    });
+
+    $("rollsave").addEventListener("click", () => {
+      const w = rollNum("rollw"), h = rollNum("rollh");
+      if (!w || !h) { status("Rolls: enter a width and height in mm first."); return; }
+      const name = $("rollname").value.trim();
+      const colour = $("rollcolor").value.trim();
+
+      // The roll is its physical size: w across the head, h along the feed. The pixels
+      // are derived per printer by sizeForRoll(), so a roll saved on the B1 Pro does not
+      // carry 300 dpi onto a D110_M.
+      const rec = { w_mm: w, h_mm: h };
+      if (name) rec.name = name;
+      if (colour) rec.color = colour;
+      const id = sizeForRoll(rec);
+      if (!id) { status("Rolls: could not find or create a size for this printer."); return; }
+      $("size").value = id;
+      refresh();
+
+      // The roll: name and colour hang off the barcode, not off the geometry.
+      if (lastTag && lastTag.barCode) {
+        const prev = labelMemory.recall(lastTag.barCode) || {};
+        const out = Object.assign({}, prev, rec);
+        delete out.size;
+        if (!name) delete out.name;
+        if (!colour) delete out.color;
+        if (labelMemory.remember(lastTag.barCode, out)) {
+          console.log(`[rolls] saved tag ${lastTag.barCode} → ${w} × ${h} mm (size "${id}")${colour ? " (" + colour + ")" : ""}.`);
+          status(`Rolls: saved ${lastTag.barCode} → ${w} × ${h} mm${colour ? " (" + colour + ")" : ""}.`);
+        } else {
+          status("Rolls: the size was saved but the roll record was not (storage refused).");
+        }
+      } else {
+        // Saving a size with no tag read is legitimate — you may be defining a size
+        // before the roll is fitted — but it must not look like a roll was registered.
+        console.log(`[rolls] size "${id}" selected, but NO tag was read, so no barcode was linked.`);
+        status(`Rolls: size ${w} × ${h} mm saved and selected. No tag read — press "Read tag" with the roll fitted to link it.`);
+      }
+      renderRolls();
+    });
+
+    // Copy JSON. localStorage is per-browser AND per-origin: rolls registered on the
+    // phone are invisible on the desktop and die with the browser profile. This is the
+    // only way out of that box, so a failure has to be loud.
+    $("rollcopy").addEventListener("click", async () => {
+      const payload = JSON.stringify({ sizes: customSizes(), rolls: labelMemory.all() }, null, 1);
+      const ok = await window.demoCopyText(payload);
+      $("rollcopy").textContent = ok ? "Copied ✓" : "Copy failed";
+      setTimeout(() => { $("rollcopy").textContent = "Copy JSON"; }, 1600);
+      if (!ok) {
+        // Never leave the user believing an empty clipboard is their data.
+        $("rolljson").style.display = "block";
+        $("rolljson").value = payload;
+        $("rolljson").select();
+        status("Rolls: the clipboard refused — the JSON is in the box below, select and copy it by hand.");
+      }
+    });
+
+    // Import: paste, press again to apply. Uses seed(), which FILLS GAPS ONLY — an
+    // import must not silently overwrite a size this device learned from a real print.
+    $("rollpaste").addEventListener("click", () => {
+      const box = $("rolljson");
+      if (box.style.display !== "block" || !box.value.trim()) {
+        box.style.display = "block";
+        box.value = "";
+        box.placeholder = 'paste the JSON here, then press "Import JSON" again';
+        box.focus();
+        return;
+      }
+      let data;
+      try { data = JSON.parse(box.value); }
+      catch (e) { status("Rolls: that is not valid JSON — " + e.message); return; }
+      if (!data || typeof data !== "object") { status("Rolls: the JSON must be an object."); return; }
+
+      // Imported JSON is UNTRUSTED — the whole point of this button is that it arrives
+      // from another device or another person. Nothing here is rendered as markup (the
+      // list is built with textContent), so this is not the last line of defence, but
+      // junk still must not reach storage: a stray key becomes a permanent entry, and a
+      // 10 MB string becomes a quota failure that costs the label memory.
+      const KEY_RE = /^[A-Za-z0-9._:-]{1,64}$/;
+      // Printable only, checked by character code so no regex escape has to survive
+      // the trip through this file: control characters would render as invisible junk
+      // in the list and in the log, where they are worse than useless.
+      const printable = (v) => {
+        for (let i = 0; i < v.length; i++) {
+          const c = v.charCodeAt(i);
+          if (c < 32 || c === 127) return false;
+        }
+        return true;
+      };
+      const text = (v, max) => (typeof v === "string" && v.length > 0 && v.length <= max
+        && printable(v)) ? v : null;
+      const num = (v, max) => (typeof v === "number" && isFinite(v) && v > 0 && v <= max) ? v : null;
+      let skipped = 0;
+
+      let nSizes = 0;
+      if (data.sizes && typeof data.sizes === "object") {
+        const sizes = customSizes();
+        for (const [k, s] of Object.entries(data.sizes)) {
+          if (reg.sizes[k] || sizes[k]) continue;              // never shadow what exists
+          if (!KEY_RE.test(k) || !s || typeof s !== "object") { skipped++; continue; }
+          // Rebuild the entry field by field rather than storing the object we were
+          // handed: an unknown key here would be carried into the size a print uses.
+          const clean = {
+            label: text(s.label, 64) || k,
+            w_px: num(s.w_px, 20000), h_px: num(s.h_px, 20000),
+            w_mm: num(s.w_mm, 2000), h_mm: num(s.h_mm, 2000),
+            dpi: num(s.dpi, 2400), margin: num(s.margin, 200) || 10,
+          };
+          if (!clean.w_px || !clean.h_px || !clean.dpi) { skipped++; continue; }
+          sizes[k] = clean; nSizes++;
+        }
+        if (nSizes) saveCustomSizes(sizes);
+      }
+
+      let cleanRolls = {};
+      if (data.rolls && typeof data.rolls === "object") {
+        for (const [bc, r] of Object.entries(data.rolls)) {
+          const rec = typeof r === "string" ? { size: r } : r;
+          if (!KEY_RE.test(bc) || !rec || typeof rec !== "object") { skipped++; continue; }
+          // A roll is its millimetres (w_mm, h_mm); a legacy roll names a size instead.
+          const wmm = num(rec.w_mm, 2000), hmm = num(rec.h_mm, 2000);
+          const size = text(rec.size, 64);
+          let out;
+          if (wmm && hmm) out = { w_mm: wmm, h_mm: hmm };
+          else if (size && KEY_RE.test(size)) out = { size: size };
+          else { skipped++; continue; }
+          const nm = text(rec.name, 64); if (nm) out.name = nm;
+          const cl = text(rec.color, 32); if (cl) out.color = cl;
+          cleanRolls[bc] = out;
+        }
+      }
+      const nRolls = labelMemory.seed(cleanRolls);
+
+      populateSizes(); renderRolls();
+      box.style.display = "none"; box.value = "";
+      const msg = `Rolls: imported ${nSizes} size(s) and ${nRolls} roll(s). Existing entries were kept, not overwritten.`;
+      console.log("[rolls] " + msg);
+      status(msg);
+    });
+
+    renderRolls();
+
+    // Learn from what the user actually did. Called only AFTER a print resolved
+    // successfully, with the buttons still disabled, so this status read can never
+    // interleave with another print. The tag is re-read here rather than reused from
+    // connect time, so swapping the roll mid-session is learned correctly. Every
+    // failure is swallowed: the label already came out, and a failed status read must
+    // not turn a good print into an error.
+    async function rememberAfterPrint(sizeId) {
+      try {
+        const st = await Niimbot.getStatus();
+        const rfid = st && st.decoded && st.decoded.rfid;
+        if (!rfid || !rfid.tagPresent || !rfid.barCode) return;
+        // MERGE, never replace: the record may carry a colour and a name entered in the
+        // Rolls panel, and printing must not quietly wipe them. Only the label's size is
+        // learned here, because only that is what the user just demonstrated on paper —
+        // and as millimetres, so the roll still fits another printer. A size with no mm
+        // falls back to remembering the size id.
+        const prev = labelMemory.recall(rfid.barCode);
+        const sz = allSizes()[sizeId];
+        const learned = sz && sz.w_mm > 0 && sz.h_mm > 0 ? { w_mm: sz.w_mm, h_mm: sz.h_mm } : { size: sizeId };
+        const next = Object.assign({}, prev, learned);
+        if (learned.w_mm) delete next.size; else { delete next.w_mm; delete next.h_mm; }
+        if (prev && JSON.stringify(prev) === JSON.stringify(next)) {
+          console.log(`[label-memory] tag ${rfid.barCode} already remembered as ${learned.w_mm ? learned.w_mm + " × " + learned.h_mm + " mm" : `"${sizeId}"`}.`);
+        } else if (labelMemory.remember(rfid.barCode, next)) {
+          console.log(`[label-memory] remembered tag ${rfid.barCode} → ${learned.w_mm ? learned.w_mm + " × " + learned.h_mm + " mm" : `"${sizeId}"`}.`);
+          renderRolls();
+        }
+      } catch (e) {
+        console.log("[label-memory] could not read the tag after printing (" + ((e && e.message) || e) + ") — nothing remembered.");
+      }
+    }
+
+    // Build the lid/paper/battery phrase from a status-read result, with the
+    // per-field evidence mark and the battery "(inferred)" note. Shared by the
+    // identify handler and the readstatus handler below so the text can't drift
+    // between the two — it used to live only in readstatus, typed once. Returns
+    // null when the heartbeat wasn't recognised (st.decoded.heartbeat is null);
+    // the caller decides what to show in that case.
+    function statusSummary(st) {
+      const hb = st && st.decoded && st.decoded.heartbeat;
+      if (!hb) return null;
+      const ev = (st.decoded && st.decoded.evidence && st.decoded.evidence.heartbeat) || {};
+      const mark = (k) => (ev[k] === "observed" ? "" : ` (${ev[k] || "?"})`);
+      const bat = Niimbot.battery(st);
+      const batteryPart = bat ? `, battery ${bat.text}${bat.evidence === "observed" ? "" : " (inferred)"}` : "";
+      return `lid ${hb.lidClosed ? "closed" : "open"}${mark("lidClosed")}, `
+        + `paper ${hb.paperInserted ? "in" : "out"}${mark("paperInserted")}`
+        + `${batteryPart}`;
+    }
+
+    // Connect and ask the printer which model it is (B1 and B1 Pro share the BLE
+    // name), then auto-select the matching registry model + size — like niim.blue.
+    $("identify").addEventListener("click", async () => {
+      $("identify").disabled = true;
+      try {
+        status("connecting… (pick your printer from the chooser)");
+        // Filter the chooser to the union of all known model name prefixes, so it
+        // lists only Niimbot printers we recognise but still finds any of them.
+        const sel = reg.models[$("model").value];
+        const allPrefixes = [...new Set(Object.values(reg.models).flatMap((m) => m.name_prefixes || []))];
+        const info = await Niimbot.identify({ ...sel, name_prefixes: allPrefixes });
+        let matched = null;
+        for (const [k, m] of Object.entries(reg.models)) if (m.id === info.modelId) matched = k;
+        const detail = `id ${info.modelId}, protocol v${info.protocolVersion}, BLE name "${info.deviceName || "?"}"`;
+        let msg;
+        if (matched) {
+          $("model").value = matched;
+          populateSizes();
+          refresh();
+          msg = `Identified: ${info.label} — ${detail}. Model "${matched}" selected.`;
+        } else {
+          msg = `Identified: ${info.label} — ${detail}. No matching model in registry — selection left as is.`;
+        }
+        status(msg);
+        // Restore the size remembered for this roll, and show lid/paper/battery
+        // right away — one status read serves both. Caught separately: the
+        // identify already succeeded, and a status read that fails must not undo
+        // that or clear the identification message already shown.
+        try {
+          const st = await Niimbot.getStatus();
+          reviewTag(st, true);
+          const summary = statusSummary(st);
+          if (summary) status(`${msg} ${summary}.`);
+        } catch (e) {
+          console.log("[label-memory] status read after identify failed (" + ((e && e.message) || e) + ") — nothing restored.");
+        }
+      } catch (e) {
+        fail(e);
+      } finally {
+        $("identify").disabled = false;
+      }
+    });
+
+    // Drop the connection so you can pair a different printer (e.g. switch B1 ↔ B1 Pro).
+    $("disconnect").addEventListener("click", async () => {
+      try {
+        await Niimbot.disconnect();
+        status("disconnected — pick a printer and identify again.");
+      } catch (e) {
+        fail(e);
+      }
+    });
+
+    // Consumable status. Lid/paper/tag are confirmed on a B1 Pro; everything else is
+    // still niimbluelib's transcription, which is why the HEX DUMP of `raw` stays the
+    // useful output: paste it (Copy log) next to what the printer physically shows —
+    // lid open/shut, paper in/out, tag present — and another field can be settled. Per
+    // field trust is in `decoded.evidence`. Nothing in the print path reads any of this.
+    $("readstatus").addEventListener("click", async () => {
+      $("readstatus").disabled = true;
+      try {
+        status("reading status…");
+        const st = await Niimbot.getStatus();
+        const dump = (u8) => (u8 ? Array.from(u8).map((b) => b.toString(16).padStart(2, "0")).join(" ") : "(no answer)");
+        console.log(`[status] confidence=${st.confidence}`);
+        console.log(`[status] raw heartbeat (resp ${st.raw.heartbeatCmd != null ? "0x" + st.raw.heartbeatCmd.toString(16) : "—"}): ${dump(st.raw.heartbeat)}`);
+        console.log(`[status] raw rfid: ${dump(st.raw.rfid)}`);
+        console.log(`[status] decoded: ${JSON.stringify(st.decoded)}`);
+        // Say per field how much to trust it — a blanket label would be wrong in both
+        // directions now that lid/paper are confirmed and chargeLevel still is not.
+        // battery() reads chargeLevel per the CONNECTED model's batteryScale — see
+        // src/niimbot.js. Show its text, not the raw byte: "40" alone doesn't say
+        // whether that's 40 % or a level-4-of-4 enum, and the two look identical here.
+        // Nothing shown when battery() returns null (no heartbeat decoded) — a missing
+        // line beats a fake "0".
+        const summary = statusSummary(st);
+        status(summary
+          ? `status: ${summary}. See the log for the raw dump.`
+          : "status read — layout not recognised, raw bytes are in the log.");
+        // Report the label memory, but do NOT auto-select here: this button is a
+        // read, and moving the dropdown under a user who just chose a size would be
+        // the surprise the log line is supposed to prevent.
+        reviewTag(st, false);
+      } catch (e) {
+        fail(e);
+      } finally {
+        $("readstatus").disabled = false;
+      }
+    });
+
+    $("print").addEventListener("click", async () => {
+      const model = reg.models[$("model").value];
+      const sizeId = $("size").value;
+      const size = allSizes()[sizeId];
+      const canvas = drawTest(size, $("text").value);
+      $("print").disabled = true;
+      try {
+        await Niimbot.printImage(canvas.toDataURL("image/png"), { model, size, density: density(), onProgress: status });
+        status("ok — label sent.");
+        await rememberAfterPrint(sizeId);
+      } catch (e) {
+        fail(e);
+      } finally {
+        $("print").disabled = false;
+      }
+    });
+
+    // Same print path as the button above — the only difference is the artwork, which
+    // is the whole point: it answers "how long does MY label take" instead of "how long
+    // does the stress pattern take". The elapsed time is reported next to the label's
+    // dimensions so the two are comparable across sizes and write modes.
+    $("printreal").addEventListener("click", async () => {
+      const model = reg.models[$("model").value];
+      const sizeId = $("size").value;
+      const size = allSizes()[sizeId];
+      $("printreal").disabled = true;
+      try {
+        const canvas = drawReal(size, $("text").value);
+        const t0 = Date.now();
+        await Niimbot.printImage(canvas.toDataURL("image/png"), { model, size, density: density(), onProgress: status });
+        status(`ok — realistic label sent (${size.w_px}×${size.h_px}, density ${density()}, `
+             + `${Niimbot.EFFECTIVE_WRITE_MODE}, ${((Date.now() - t0) / 1000).toFixed(1)} s).`);
+        await rememberAfterPrint(sizeId);
+      } catch (e) {
+        fail(e);
+      } finally {
+        $("printreal").disabled = false;
+      }
+    });
+
+    // niim.blue's fast path: ONE image upload, printer repeats it `copies` times.
+    // Use this whenever the labels are identical — the data crosses BLE only once.
+    $("print3copies").addEventListener("click", async () => {
+      const model = reg.models[$("model").value];
+      const sizeId = $("size").value;
+      const size = allSizes()[sizeId];
+      const canvas = drawTest(size, $("text").value);
+      $("print3copies").disabled = true;
+      try {
+        await Niimbot.printImage(canvas.toDataURL("image/png"), { model, size, copies: 3, density: density(), onProgress: status });
+        status("ok — 3 copies (single upload) sent.");
+        await rememberAfterPrint(sizeId);
+      } catch (e) {
+        fail(e);
+      } finally {
+        $("print3copies").disabled = false;
+      }
+    });
+
+    // `count` DISTINCT realistic labels (light: no corner-to-corner diagonals), so the
+    // print order and the absence of a retract between them are obvious on the paper.
+    //
+    // The 5-label version exists to measure the INTER-LABEL PAUSE against the dense one.
+    // Sending a page costs roughly one paced write per surviving row, so a light label —
+    // where run-length collapses most rows — should send far faster than it prints and
+    // keep the paper moving, while the dense button (~one write per row) cannot. Same
+    // count, same size, only the content differs: that is the comparison.
+    async function runBatch(count) {
+      const model = reg.models[$("model").value];
+      const sizeId = $("size").value;
+      const size = allSizes()[sizeId];
+      const off = document.createElement("canvas");
+      const urls = [];
+      for (let n = 1; n <= count; n++) {
+        drawTest(size, `${$("text").value} #${n}`, off, true);
+        urls.push(off.toDataURL("image/png"));
+      }
+      const btns = ["print", "print3", "print5", "print3dense", "print5dense"];
+      btns.forEach((b) => ($(b).disabled = true));
+      try {
+        await Niimbot.printBatch(urls, { model, size, density: density(), onProgress: status });
+        status(`ok — ${count}-label batch sent.`);
+        await rememberAfterPrint(sizeId);
+      } catch (e) {
+        fail(e);
+      } finally {
+        btns.forEach((b) => ($(b).disabled = false));
+        refresh();
+      }
+    }
+    $("print3").addEventListener("click", () => runBatch(3));
+    $("print5").addEventListener("click", () => runBatch(5));
+
+    // Worst-case stress: `count` dense noise labels at the selected size. Pick your
+    // LARGEST label here to push the most data through the look-ahead pipeline.
+    async function runDense(count) {
+      const model = reg.models[$("model").value];
+      const sizeId = $("size").value;
+      const size = allSizes()[sizeId];
+      const off = document.createElement("canvas");
+      const urls = [];
+      for (let n = 1; n <= count; n++) {
+        drawDense(size, String(n), off);
+        urls.push(off.toDataURL("image/png"));
+      }
+      const btns = ["print", "print3", "print5", "print3dense", "print5dense"];
+      btns.forEach((b) => ($(b).disabled = true));
+      try {
+        await Niimbot.printBatch(urls, { model, size, density: density(), onProgress: status });
+        status(`ok — ${count} dense labels sent.`);
+        await rememberAfterPrint(sizeId);
+      } catch (e) {
+        fail(e);
+      } finally {
+        btns.forEach((b) => ($(b).disabled = false));
+        refresh();
+      }
+    }
+
+    $("print3dense").addEventListener("click", () => runDense(3));
+    $("print5dense").addEventListener("click", () => runDense(5));
+  })();
+  </script>
+</body>
+</html>

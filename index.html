@@ -1,0 +1,535 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b2444">
+  <title>Niimbot Druckstudio – iPhone & Bluefy</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,sans-serif;color:#16243b;background:#f3f6fa}
+    body{margin:0;padding:24px 16px}.loading{margin:12vh auto;max-width:540px;padding:26px;background:white;border:1px solid #dde6f1;border-radius:18px;box-shadow:0 10px 36px #16325814}
+    h1{margin:0 0 12px;font-size:1.6rem}p{line-height:1.5}#boot-error{white-space:pre-wrap;color:#b42318}
+    button{min-height:44px;padding:10px 14px;border-radius:9px;border:0;background:#1659a9;color:white;font:inherit;font-weight:700}
+  </style>
+</head>
+<body>
+  <div class="loading" role="status">
+    <h1>Niimbot Druckstudio</h1>
+    <p>Die originale Niimbot-Web-App und die iPhone-Erweiterung werden geladen …</p>
+    <p id="boot-error" style="color:#475569">Druckstudio V15 und die mitgelieferten Druckermodule werden geladen.</p>
+    <p style="font-size:.86rem;color:#475569">Hinweis: Die Bluetooth-Druckerauswahl erscheint erst, nachdem die Original-Demo geladen wurde. Auf dem iPhone die veröffentlichte Seite in Bluefy öffnen.</p>
+    <button id="retry" onclick="location.reload()" hidden>Erneut versuchen</button>
+  </div>
+  <script>
+  (async function loadOriginalDemo(){
+    const REMOTE = new URL('./',window.location.href).href;
+    const SOURCES = [
+      REMOTE + 'niimbot-demo.html'
+    ];
+    let html = '',lastError='';
+    for(const url of SOURCES){
+      try{
+        const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
+        let res;try{res=await fetch(url,{cache:'no-cache',signal:controller.signal});}finally{clearTimeout(timeout);}
+        if(!res.ok)throw Error('HTTP '+res.status);
+        const source=await res.text();
+        if(!source.includes('id="identify"') || !source.includes('id="rollbox"') || !source.includes('Niimbot'))
+          throw Error('Quelldatei entspricht nicht der erwarteten Original-Demo.');
+        html=source.replace('const t = Date.now();', 'const t = "f20bb901-v15";').replace(/<html[^>]*>/,'<html lang="de">').replace(/<title>[\s\S]*?<\/title>/,'<title>Niimbot Druckstudio V15</title>');break;
+      }catch(e){lastError=(e&&e.message)||String(e);}
+    }
+    if(!html){
+      document.getElementById('boot-error').textContent =
+        'Die App-Dateien konnten nicht geladen werden. Bitte alle neun App-Dateien direkt ins Hauptverzeichnis hochladen.\nDetails: '+lastError;
+      document.getElementById('retry').hidden=false;
+      return;
+    }
+    const ownAddon=new URL('addon.js?v=15-flat-1',window.location.href).href;
+    const base='<base href="'+REMOTE+'">';
+    const extraStyle=`<style>
+#dd-stop:disabled{display:none!important}
+#dd-addon .dd-dockmain button[hidden]{display:none!important}
+#dd-editor,#dd-crop-canvas{margin:0!important;border:0!important;image-rendering:auto!important}
+body.dd-has-studio,#dd-addon{height:var(--studio-height,100dvh)!important;max-height:var(--studio-height,100dvh)!important}
+#dd-addon .dd-layer{flex-wrap:wrap}#dd-addon .dd-layer label{flex:1 1 120px}
+#dd-addon .dd-viewzoom{min-height:0!important;overflow:hidden}#dd-addon #dd-viewzoom{flex:1 1 auto;min-height:20px!important}
+
+      :root{color-scheme:light}
+      html{scroll-behavior:smooth;overflow-x:hidden}
+      body{max-width:940px!important;margin:0 auto!important;padding:16px 14px 64px!important;
+        padding-left:max(14px,env(safe-area-inset-left))!important;
+        padding-right:max(14px,env(safe-area-inset-right))!important;
+        background:#f3f6fb!important;color:#17233b!important}
+      body>h1{font-size:clamp(1.5rem,6vw,2.2rem)!important;margin:12px 0 8px}
+      body>p{line-height:1.5;color:#475569}
+      button{border-radius:10px!important;min-height:44px!important;max-width:100%;background:#fff;border:1px solid #b6c4d7;color:#162b4a;font-weight:650;box-sizing:border-box}
+      button:active{filter:brightness(.95)}
+      input,select,textarea{box-sizing:border-box;min-height:44px!important;font-size:16px!important;border-radius:8px;border:1px solid #b6c4d7;background:#fff;color:#17233b}
+      #identify{background:#135caf!important;color:#fff!important;border-color:#135caf!important}
+      #model,#size{max-width:100%;min-width:180px;}
+      #preview,#print,#printreal,#print3copies,#print3,#print5,#print3dense,#print5dense{display:none!important}
+      body>h1,body>h1+p,label:has(#text){display:none!important}
+      #rollbox,#logbox{border-radius:12px!important;background:#fff;padding:12px!important;border:1px solid #dbe3ed!important}
+      #rollbox summary,#logbox summary{padding:8px 0;min-height:44px;align-content:center}
+      #status{font-size:.9rem;white-space:pre-wrap;word-break:break-word}
+      #niimbot-mobile-head{background:#0b2444;color:#fff;border-radius:16px;padding:16px 17px;margin:8px 0 20px;box-shadow:0 5px 14px #1127481a}
+      #niimbot-mobile-head h2{margin:0 0 8px;font-size:1.18rem}
+      #niimbot-mobile-head p{font-size:.88rem;line-height:1.45;color:#d5e5f7;margin:8px 0}
+      #niimbot-mobile-head nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
+      #niimbot-mobile-head nav a{background:#fff;color:#0b2444;text-decoration:none;font-weight:700;border-radius:8px;padding:10px 13px;display:inline-block}
+      #niimbot-mobile-head a:focus-visible{outline:2px solid #8ed5ff}
+      #dd-addon{padding:17px;background:#fff;border:1px solid #dbe3ed;border-radius:16px;margin:20px 0}
+      #dd-addon *{box-sizing:border-box}
+      #dd-addon h2{font-size:1.24rem;margin:0 0 9px}
+      #dd-addon button.primary{background:#155bb0;color:#fff;border-color:#155bb0}
+      #dd-addon button:disabled{opacity:.48}
+      #dd-addon .dd-drop{border:2px dashed #88a7c9;border-radius:12px;padding:24px 14px;background:#f7fbff;text-align:center;cursor:pointer}
+      #dd-addon .dd-drop.drag{background:#e4f0ff;border-color:#155bb0}
+      #dd-addon .dd-muted{font-size:.85rem;color:#617187;line-height:1.45}
+      #dd-addon .dd-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:12px 0}
+      #dd-addon .dd-row label{display:flex;flex:1;min-width:130px;flex-direction:column;gap:6px;margin:0;font-size:.85rem;font-weight:650}
+      #dd-addon .dd-row input,#dd-addon .dd-row select{width:100%}
+      #dd-addon .dd-queue{display:grid;gap:8px;margin:14px 0}
+      #dd-addon .dd-queueitem{display:grid;grid-template-columns:46px minmax(0,1fr) auto;gap:9px;align-items:center;border:1px solid #e2e8f0;border-radius:10px;padding:8px}
+      #dd-addon .dd-thumb{display:block;width:46px;height:46px;object-fit:contain;background:#f0f3f8;border-radius:6px}
+      #dd-addon .dd-title{font-size:.9rem;font-weight:700;overflow-wrap:anywhere}
+      #dd-addon .dd-inline{display:flex;gap:4px;flex-wrap:wrap}
+      #dd-addon .dd-inline button{padding:5px 9px;min-height:34px!important}
+      #dd-addon .dd-editorstage{display:flex;align-items:stretch;gap:12px;background:#f1f5fa;border-radius:11px;padding:10px;min-height:320px}
+      #dd-addon .dd-editorwrap{display:grid;place-items:center;flex:1;min-width:0;background:#f1f5fa;border-radius:11px;padding:4px;min-height:320px}
+      #dd-addon #dd-editor{display:block;width:100%;max-width:100%;height:500px;touch-action:none;background:#e9edf3;border-radius:10px;box-shadow:inset 0 0 0 1px #d9e2ef}
+      #dd-addon .dd-layer[data-locked="true"]{background:#edf1f6;border-color:#94a3b8}
+      #dd-addon .dd-layer .dd-lock-toggle{font-size:20px;min-height:40px!important;background:#f1f5fa;border:1px solid #cbd5e1}
+      #dd-addon .dd-layer[data-locked="true"] .dd-lock-toggle{background:#dbeafe;border-color:#60a5fa}
+      #dd-addon .dd-viewzoom{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:5px;border-radius:9px;background:#e8eef7;padding:8px 3px;flex:0 0 42px;width:42px;height:209px;align-self:flex-start}
+      #dd-addon .dd-viewzoom label{font-size:.66rem;font-weight:700;color:#244269;writing-mode:horizontal-tb;letter-spacing:0;transform:none}
+      #dd-addon #dd-viewzoom{writing-mode:vertical-lr;direction:rtl;width:22px;height:117px;min-height:0!important;max-height:117px!important;flex:0 0 117px;min-width:22px}
+      #dd-addon #dd-viewzoom-value{font-size:.73rem;color:#244269;font-weight:750;min-width:35px;text-align:center}
+      #dd-addon progress{width:100%;height:12px;accent-color:#155bb0}
+      #dd-addon #dd-state{font-size:.9rem;line-height:1.4;overflow-wrap:anywhere;white-space:pre-wrap}
+      #dd-addon .dd-warning{color:#914916;background:#fff8eb;padding:10px;border-radius:8px;font-size:.85rem}
+      #dd-addon .dd-controlgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+      #dd-addon .dd-controlgrid button{padding:8px 6px;min-height:38px!important;font-size:.92rem}
+      #dd-addon .dd-direction{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:220px}
+      #dd-addon .dd-direction .sp{visibility:hidden}
+      #dd-addon .dd-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+      #dd-addon .dd-toolbar button{padding:8px 10px;min-height:38px!important}
+      #dd-addon .dd-smallinput{max-width:120px}
+      #dd-addon .dd-panel{border:1px solid #dbe3ed;border-radius:12px;margin:14px 0;padding:12px;background:#f8faff}
+      #dd-addon .dd-panel h3{margin:0 0 10px;font-size:1.04rem}
+      #dd-addon .dd-check{display:flex;align-items:center;gap:6px;font-size:.89rem}
+      #dd-addon .dd-check input{min-height:18px!important;width:18px!important;flex:0 0 auto}
+      #dd-addon .dd-textlist{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+      #dd-addon .dd-textlist button[aria-pressed="true"]{background:#d8eaff;color:#124e90;border-color:#1d6fb5}
+      #dd-addon #dd-textcontent{width:100%;min-height:70px;padding:8px;resize:vertical}
+      #dd-addon #dd-fontlist{font-size:.81rem;color:#4b5c72;line-height:1.5;word-break:break-word}
+      #dd-addon .dd-section-title{font-weight:700;font-size:.9rem;margin:10px 0 3px}
+      #dd-addon #dd-fontfile{max-width:100%;font-size:.9rem}
+      #dd-addon #dd-fontfile::file-selector-button{border:1px solid #94a3b8;border-radius:7px;background:#fff;padding:6px}
+      #dd-addon .dd-badge{font-size:.8rem;color:#51647d}
+      #dd-addon button.dd-activated{background:#dceeff;color:#155bb0;border:2px solid #155bb0}
+      #dd-addon .dd-rotationrow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+      #dd-addon .dd-rotationrow input[type="range"]{flex:3;min-width:130px}
+      #dd-addon .dd-rotationrow input[type="number"]{flex:0 0 84px;max-width:94px}
+      #dd-addon .dd-rotationrow button{flex:0 0 auto}
+      #dd-addon .dd-no-image{color:#64748b}
+      #dd-addon .dd-imageadjusts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 12px}
+      #dd-addon .dd-imageadjusts label{min-width:0}
+      #dd-addon .dd-adjustitem{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;border:1px solid #dde6f2;border-radius:11px;padding:10px;background:#fff;min-width:0}
+      #dd-addon .dd-adjustlabel{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:650;font-size:.87rem}
+      #dd-addon .dd-adjustslider{display:block;width:100%;min-width:0;min-height:32px!important;margin:0}
+      #dd-addon .dd-adjuststepper{display:grid;grid-template-columns:42px minmax(0,1fr) 42px;align-items:stretch;gap:8px;min-width:0}
+      #dd-addon .dd-adjuststepper button{margin:0!important;min-height:42px!important;padding:4px 2px!important;font-size:1.35rem;line-height:1}
+      #dd-addon .dd-adjuststepper input{margin:0!important;min-height:42px!important;min-width:0!important;width:100%;text-align:center;padding:5px 4px;font-variant-numeric:tabular-nums;font-size:16px!important}
+      #dd-addon .dd-adjuststepper button:disabled,#dd-addon .dd-adjuststepper input:disabled{opacity:.5}
+      #dd-addon .dd-rangevalue{font-variant-numeric:tabular-nums;color:#155bb0;font-weight:700;font-size:.84rem}
+      #dd-addon .dd-layerlist{display:grid;gap:6px;margin:8px 0}
+      #dd-addon .dd-layer{display:flex;gap:6px;align-items:center;border:1px solid #d1dbe8;border-radius:9px;background:#fff;padding:6px}
+      #dd-addon .dd-layer[data-selected="true"]{border-color:#155bb0;background:#eaf4ff}
+      #dd-addon .dd-layer label{flex:1;min-width:0;overflow-wrap:anywhere;font-size:.84rem}
+      #dd-addon .dd-layer button{min-height:35px!important;padding:5px 9px}
+      #dd-addon .dd-mini{min-width:0}
+      #dd-addon .dd-textfeatures{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}
+      #dd-addon .dd-caption{font-size:.82rem;color:#475569}
+      #dd-addon input[type=range]{accent-color:#155bb0}
+      #dd-addon .dd-textsize-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+      #dd-addon .dd-flow-buttons{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+      #dd-addon .dd-flow-buttons button{padding:8px 10px;min-height:38px!important}
+      #dd-addon .dd-subpanel{border:1px solid #dbe3ed;border-radius:10px;background:#fff;padding:10px;margin-top:8px}
+      #dd-addon .dd-subpanel[hidden]{display:none!important}
+      @media(max-width:480px){#dd-addon .dd-imageadjusts{grid-template-columns:1fr}#dd-addon .dd-textsize-grid{grid-template-columns:1fr 1fr}#dd-addon .dd-editorstage{gap:7px;padding:7px}#dd-addon .dd-viewzoom{flex-basis:38px;width:38px;padding:7px 2px}#dd-addon #dd-viewzoom{min-height:0!important}}
+
+      @media(max-width:480px){
+        button{margin:3px 2px 3px 0!important}
+        #dd-addon .dd-queueitem{grid-template-columns:40px minmax(0,1fr)}
+        #dd-addon .dd-inline{grid-column:2}
+        #dd-addon .dd-thumb{width:40px;height:40px}
+        #niimbot-mobile-head nav a{flex:1;text-align:center}
+        #dd-addon #dd-editor{height:420px}
+      }
+
+      #dd-addon .dd-layer-hint{font-size:.83rem;color:#526780;line-height:1.45;margin:7px 0}
+      #dd-addon .dd-layer-files{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:9px 0}
+      #dd-addon .dd-layer-files button{background:#eaf3ff;border-color:#91baf0;color:#144c8c}
+      #dd-addon .dd-layerfiles{display:grid;gap:8px;margin-top:12px}
+      #dd-addon .dd-activeimage{font-size:.86rem;background:#e6f2ff;padding:8px;border-radius:8px;overflow-wrap:anywhere}
+      #dd-addon .dd-viewzoom button{font-size:17px;min-height:23px!important;width:28px;padding:0!important;border:0;background:transparent;color:#174f8a;margin:0!important}
+      #dd-addon .dd-historybar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid #dbe3ed;background:#f7fbff;border-radius:10px;padding:9px 10px;margin:10px 0}
+      #dd-addon .dd-historybar button{min-height:38px!important;padding:6px 10px!important;border:1px solid #95a9c2;border-radius:8px;background:white;color:#183c68;font-size:.88rem}
+      #dd-addon .dd-historybar button:disabled{opacity:.38}
+      #dd-addon .dd-historybar span{color:#52667d;font-size:.74rem;flex:1;min-width:110px}
+      #dd-addon .dd-layer[data-locked="true"]{background:#f0f3f8;border-color:#bec9d9}
+      #dd-addon .dd-layer .dd-lock-toggle{min-width:37px!important;padding:5px!important;background:#e6edf7;color:#183b65;border-color:#aac1df}
+      #dd-crop-dialog{border:0;border-radius:16px;padding:0;width:min(96vw,650px);max-height:94dvh;overflow:auto;background:#fff;color:#17243d;box-shadow:0 15px 65px #1620337a}
+      #dd-crop-dialog::backdrop{background:rgba(21,32,50,.72)}
+      #dd-crop-dialog .crop-body{padding:16px}
+      #dd-crop-dialog h3{font-size:1.12rem;margin:0 0 7px}
+      #dd-crop-dialog .crop-presets{display:flex;gap:5px;flex-wrap:wrap;margin:9px 0}
+      #dd-crop-dialog .crop-presets button{min-height:38px!important;padding:6px 10px!important;border:1px solid #91a8c4;background:#f4f8fc;color:#193e69;border-radius:7px}
+      #dd-crop-dialog .crop-presets button[aria-pressed="true"]{background:#1659a9!important;color:#fff!important}
+      #dd-crop-dialog #dd-crop-canvas{display:block;width:100%;height:340px;touch-action:none;border-radius:9px;background:#d8dee7}
+      #dd-crop-dialog .crop-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:13px}
+      #dd-crop-dialog button{font:inherit;min-height:42px;border-radius:9px;padding:8px 13px;border:1px solid #91a8c4;background:#fff;color:#1a3f69}
+      #dd-crop-dialog #dd-crop-save{background:#1659a9;border-color:#1659a9;color:#fff}
+      @media(max-width:480px){#dd-crop-dialog #dd-crop-canvas{height:285px}#dd-addon .dd-layer button{padding:5px 7px!important}}
+
+#model,#size{min-width:0!important}
+body.dd-has-studio{height:100dvh!important;max-height:100dvh!important;overflow:hidden!important}
+/* V13: mobile editor with persistent preview, resizable tool drawer, fixed print footer */
+html,body{overflow-x:hidden!important}
+body{max-width:1080px!important;padding:4px 8px!important;background:#edf2f9!important}
+#niimbot-mobile-head{display:none!important}
+#dd-addon{box-sizing:border-box!important;height:100svh;height:100dvh;display:flex;flex-direction:column;gap:0;overflow:hidden;margin:0!important;padding:5px 5px calc(78px + env(safe-area-inset-bottom))!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:0!important}
+#dd-addon>.dd-printerbar{flex:0 0 auto;background:#fff;border:1px solid #dce4ef;border-radius:13px;padding:8px 9px;position:relative;z-index:3;box-shadow:0 2px 8px #0a254015;margin-bottom:5px}
+#dd-addon .dd-printerbar-head{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px}
+#dd-addon .dd-printerbar-head strong{font-size:.96rem;letter-spacing:-.01em;color:#12335f}
+#dd-addon .dd-printer-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end}
+#dd-addon .dd-printer-controls>label{display:flex;flex:1 1 125px;flex-direction:column;gap:3px;font-size:.72rem;color:#52647a;min-width:0;white-space:normal}
+#dd-addon .dd-printer-controls select{width:100%;min-width:0;min-height:35px!important;height:35px;padding:5px 22px 5px 6px;font-size:16px!important}
+#dd-addon .dd-printer-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:6px}
+#dd-addon .dd-printer-actions button{min-height:34px!important;margin:0!important;padding:6px 10px!important;font-size:.78rem}
+#dd-addon .dd-printer-actions #identify{flex:1 1 140px}
+#dd-addon .dd-printer-actions #readstatus{display:none!important}
+#dd-addon .dd-printer-info{font-size:.68rem;max-height:24px;overflow:auto;color:#63738b}
+#dd-addon .dd-workspace{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden;gap:5px}
+#dd-addon .dd-preview-area{display:flex;flex-direction:column;flex:1 1 auto;min-height:140px;overflow:hidden;background:white;border:1px solid #d8e2f0;border-radius:15px;padding:7px}
+#dd-addon .dd-preview-head{display:flex;justify-content:space-between;align-items:center;gap:7px;min-height:37px;flex:0 0 auto}
+#dd-addon .dd-preview-head .dd-preview-name{font-size:.8rem;font-weight:750;color:#1b3b63;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
+#dd-addon .dd-preview-area .dd-historybar{margin:0;display:flex;align-items:center;gap:4px;padding:2px;border:0;background:none;flex-wrap:nowrap}
+#dd-addon .dd-preview-area .dd-historybar button{min-height:34px!important;padding:4px 7px!important;white-space:nowrap;font-size:.84rem}
+#dd-addon .dd-preview-area #dd-history-status{display:none}
+#dd-addon .dd-preview-area #dd-preview-title{font-size:.71rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:4px 0 3px}
+#dd-addon .dd-preview-area .dd-editorstage{flex:1 1 auto;min-height:0!important;height:0!important;overflow:hidden;margin:0;padding:6px;align-items:stretch}
+#dd-addon .dd-preview-area .dd-editorwrap{flex:1 1 auto;min-height:0!important;height:100%;padding:1px}
+#dd-addon .dd-preview-area #dd-editor{height:100%!important;width:100%!important;max-width:100%;min-height:0!important;display:block}
+#dd-addon .dd-preview-area .dd-viewzoom{height:195px;max-height:95%;align-self:flex-start;min-height:0!important;flex:0 0 38px;width:38px}
+#dd-addon .dd-preview-area #dd-viewzoom{height:100px!important;min-height:0!important;max-height:100px!important;flex:0 0 100px}
+#dd-addon .dd-toolshell{display:flex;flex-direction:column;flex:0 0 255px;height:255px;min-height:158px;max-height:70%;overflow:hidden;background:white;border:1px solid #cedceb;border-radius:16px 16px 9px 9px;box-shadow:0 -4px 24px #1432581c;position:relative}
+#dd-addon .dd-gripbar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px;flex:0 0 36px;padding:3px 8px;background:#f8fbff;border-bottom:1px solid #e1eaf5;touch-action:none;cursor:ns-resize;user-select:none}
+#dd-addon .dd-draghandle{height:6px;width:42px;background:#b9cce1;border-radius:10px;margin:auto}
+#dd-addon .dd-toolsizes{display:flex;gap:4px}
+#dd-addon .dd-toolsizes button{min-height:28px!important;margin:0!important;padding:3px 7px!important;font-size:.72rem;color:#214166}
+#dd-addon .dd-tabstrip{display:flex;align-items:stretch;gap:1px;min-height:46px;flex:0 0 46px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;background:#fff;border-bottom:1px solid #d9e3f0;overscroll-behavior-x:contain}
+#dd-addon .dd-tabstrip::-webkit-scrollbar{display:none}
+#dd-addon .dd-tabstrip button{flex:0 0 auto;white-space:nowrap;margin:0!important;min-height:43px!important;padding:7px 13px!important;border:none!important;border-radius:0!important;background:transparent!important;color:#536579!important;font-size:.88rem;position:relative}
+#dd-addon .dd-tabstrip button[aria-selected="true"]{color:#155bb0!important;font-weight:750;background:#eef5ff!important}
+#dd-addon .dd-tabstrip button[aria-selected="true"]:after{content:"";height:3px;position:absolute;left:9px;right:9px;bottom:0;background:#1766bb;border-radius:3px}
+#dd-addon .dd-tabcontent{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;min-height:0;flex:1 1 auto;padding:11px 12px 28px;touch-action:pan-y;-webkit-overflow-scrolling:touch}
+#dd-addon .dd-tabcontent[hidden]{display:none!important}
+#dd-addon .dd-tabcontent .dd-panel{margin:4px 0 12px;padding:8px;border:0;background:transparent}
+#dd-addon .dd-tabcontent .dd-row{margin:7px 0}
+#dd-addon .dd-tabcontent .dd-row label{min-width:110px}
+#dd-addon .dd-tabcontent .dd-muted{font-size:.78rem}
+#dd-addon .dd-tabcontent .dd-toolbar{margin:7px 0}
+#dd-addon .dd-tabcontent .dd-toolbar button{margin:1px!important}
+#dd-addon .dd-tabcontent .dd-section-title{margin:8px 0 4px}
+#dd-addon .dd-tabcontent .dd-adjustitem{padding:7px}
+#dd-addon .dd-tabcontent h3{font-size:.94rem;margin:2px 0 7px}
+#dd-addon .dd-tab-lead{font-size:.85rem;color:#304b68;font-weight:750;margin:0 0 8px}
+#dd-addon .dd-globaldock{position:fixed;left:max(5px,env(safe-area-inset-left));right:max(5px,env(safe-area-inset-right));bottom:0;bottom:env(safe-area-inset-bottom);z-index:999;background:#fff;border:1px solid #cbd9e9;border-radius:14px 14px 0 0;box-shadow:0 -6px 28px #182e4b22;max-width:1080px;margin:auto;padding:7px 9px 6px;max-height:74dvh;display:flex;flex-direction:column;overflow:hidden}
+#dd-addon .dd-dockmain{display:flex;align-items:center;gap:6px}
+#dd-addon .dd-dockmain button{min-height:42px!important;margin:0!important;font-size:.85rem;padding:7px 9px!important}
+#dd-addon .dd-dockmain .dd-dockprint{flex:1 1 60%;background:#125eb7!important;color:white!important;border:1px solid #125eb7!important}
+#dd-addon .dd-dockmain .dd-dockrolls{flex:0 0 auto}
+#dd-addon .dd-dockmain .dd-dockjobs{flex:0 0 auto}
+#dd-addon .dd-dockmeta{display:flex;align-items:center;gap:5px;font-size:.7rem;color:#64748b;white-space:nowrap;overflow:hidden;margin-top:5px}
+#dd-addon .dd-dockmeta #dd-count{white-space:nowrap;flex:0 0 auto;font-size:.72rem}
+#dd-addon .dd-dockmeta #dd-state{font-size:.7rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
+#dd-addon .dd-dockmeta progress{width:60px;height:7px;flex:0 0 60px}
+#dd-addon .dd-dockdrawer{overflow-y:auto;overscroll-behavior:contain;padding-top:9px;margin-top:7px;border-top:1px solid #dee7f0;flex:1 1 auto}
+#dd-addon .dd-dockdrawer[hidden]{display:none!important}
+#dd-addon .dd-dockdrawer #rollbox,#dd-addon .dd-dockdrawer #logbox{margin:6px 0!important;padding:9px!important}
+#dd-addon .dd-dockdrawer .dd-warning{font-size:.8rem}
+#dd-addon .dd-dockdrawer .dd-row{margin:7px 0}
+#dd-addon .dd-dockdrawer #dd-stop{min-height:37px!important}
+#dd-addon .dd-docksettings #readstatus{display:inline-flex!important;align-items:center;min-height:37px!important}
+#dd-addon .dd-dockdrawer #dd-copies{max-width:90px}
+#dd-addon .dd-dockdrawer #dd-drop{max-width:100%}
+#dd-addon .dd-mobile-action{background:#eaf3ff;color:#174a83;border:1px solid #b5d0ef}
+@media(max-width:530px){
+  body{padding:0!important}
+  #dd-addon{padding:3px 4px calc(74px + env(safe-area-inset-bottom))!important;height:100dvh}
+  #dd-addon>.dd-printerbar{padding:6px 7px;margin-bottom:3px;border-radius:0 0 11px 11px}
+  #dd-addon .dd-printerbar-head{margin-bottom:4px}
+  #dd-addon .dd-printerbar-head strong{font-size:.85rem}
+  #dd-addon .dd-printer-controls{gap:4px}
+  #dd-addon .dd-printer-controls>label{flex:1 1 28%;font-size:.66rem}
+  #dd-addon .dd-printer-actions{margin-top:4px}
+  #dd-addon .dd-printer-actions button{min-height:31px!important;font-size:.73rem;padding:5px!important}
+  #dd-addon .dd-preview-area{padding:5px;min-height:125px}
+  #dd-addon .dd-preview-area .dd-historybar button{font-size:.76rem;padding:4px 5px!important}
+  #dd-addon .dd-preview-area .dd-editorstage{padding:3px}
+  #dd-addon .dd-preview-area .dd-viewzoom{width:32px;flex-basis:32px;padding:4px 1px}
+  #dd-addon .dd-preview-area .dd-viewzoom label{font-size:.61rem}
+  #dd-addon .dd-toolshell{min-height:155px}
+  #dd-addon .dd-tabcontent{padding:8px 10px 24px}
+  #dd-addon .dd-tabstrip button{padding:7px 12px!important}
+  #dd-addon .dd-tabcontent .dd-imageadjusts{grid-template-columns:1fr}
+  #dd-addon .dd-dockmain button{font-size:.79rem}
+}
+
+#dd-addon .dd-preview-head #dd-preview-overflow-toggle{min-height:30px!important;padding:4px 6px!important;white-space:nowrap;font-size:.70rem;flex:0 0 auto;background:#eef5ff;color:#174a83}
+#dd-addon .dd-preview-head .dd-historybar{flex:0 0 auto}
+#dd-addon .dd-preview-head .dd-historybar button{padding:4px 6px!important}
+#dd-addon .dd-dockmain .dd-docksave{flex:0 0 auto;min-height:42px!important;background:#eaf3ff!important;color:#144d8b!important;border-color:#b5d0ef!important}
+#dd-addon .dd-dockmain .dd-dockprint{flex:1 1 auto}
+#dd-addon .dd-template-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:10px;margin:12px 0}
+#dd-addon .dd-template-card{border:1px solid #d9e3ef;border-radius:12px;padding:10px;background:#fff;min-width:0}
+#dd-addon .dd-template-cardmain{display:flex;gap:9px;align-items:center;min-width:0}
+#dd-addon .dd-template-cardmain img{display:block;width:94px;height:76px;object-fit:contain;border:1px solid #e2e8f0;background:#f7f9fc;border-radius:7px}
+#dd-addon .dd-template-summary{flex:1;min-width:0;word-break:break-word}
+#dd-addon .dd-template-summary strong{font-size:.85rem;display:block}
+#dd-addon .dd-template-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px}
+#dd-addon .dd-template-actions button{min-height:34px!important;font-size:.72rem;padding:5px 8px!important}
+#dd-addon #dd-template-current{font-size:.78rem}
+#dd-addon #dd-template-search{width:100%}
+@media(max-width:400px){#dd-addon .dd-preview-head .dd-preview-name{display:none}#dd-addon .dd-preview-head{gap:2px}#dd-addon .dd-preview-head #dd-preview-overflow-toggle{font-size:.65rem}#dd-addon .dd-dockmain{gap:4px}#dd-addon .dd-dockmain button{padding:5px!important;font-size:.70rem}}
+@media(min-width:720px){#dd-addon .dd-tabcontent .dd-imageadjusts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+    #dd-addon .dd-printer-controls select{font-size:16px!important}
+body.dd-has-studio,#dd-addon{height:var(--studio-height,100dvh)!important;max-height:var(--studio-height,100dvh)!important}
+</style>`;
+    const intro=`<div id="niimbot-mobile-head"><h2>📱 Niimbot Druckstudio für iPhone</h2>
+      <p>Mit Bluefy über HTTPS öffnen. Die originale Bluetooth-Druckerwahl und die gesamte Rollenverwaltung bleiben erhalten.</p>
+      <nav><a href="#identify">🖨 Drucker</a><a href="#dd-addon">📄 Dateien</a><a href="#rollbox">🏷 Rollen</a></nav></div>`;
+    const addonMarkup=`<section id="dd-addon" aria-label="Dateien und Warteschlange">
+      <h2>PDF & Bilder drucken</h2>
+      <div id="dd-blehint" class="dd-warning" hidden></div>
+      <p class="dd-muted">Dateien werden nur auf deinem Gerät verarbeitet. PDF-Seiten sind einzelne Etiketten. Die oben ausgewählte Modell-/Rollen-/Dichte-Einstellung wird übernommen.</p>
+      <div id="dd-drop" class="dd-drop" tabindex="0" role="button"><strong>📂 PDF oder Bilder auswählen</strong>
+        <div class="dd-muted">iPhone: antippen und in „Dateien“ auswählen · Desktop: Drag & Drop</div>
+        <button type="button" id="dd-picker" class="primary">Dateien hinzufügen</button>
+      </div><input type="file" id="dd-files" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" multiple hidden>
+      <div class="dd-row"><label>Importieren als
+        <select id="dd-import-mode"><option value="labels">Jede Datei = eigenes Etikett</option><option value="layers">Dateien als Ebenen zum aktuellen Etikett</option></select></label>
+        <label class="dd-check" style="margin:6px 0;align-self:center;flex-direction:row"><input id="dd-crop-onimport" type="checkbox"> Beim Import zuschneiden</label></div>
+      <div class="dd-row"><label>Import-Pixeldichte<select id="dd-importdpi"><option value="original">Original</option><option value="300">300 dpi</option><option value="201">201 dpi</option></select></label>
+        <label>Startansicht<select id="dd-fit"><option value="contain">Einpassen</option><option value="cover">Füllen</option></select></label>
+        <label>Kopien pro Seite<input id="dd-copies" type="number" value="1" min="1" max="30" inputmode="numeric"></label></div>
+      <div class="dd-row"><label>Zoom %<input id="dd-zoom" class="dd-smallinput" type="number" min="5" max="4000" value="100" inputmode="numeric"></label>
+        <label>Bildmodus<select id="dd-bw"><option value="default">Original / Graustufen im Drucker</option><option value="gray">Graustufen</option><option value="bw">Hartes Schwarzweiß (Schwelle)</option></select></label></div>
+      <div class="dd-panel" id="dd-image-panel"><h3>🎚️ Bild bearbeiten</h3>
+        <div class="dd-imageadjusts">
+          <div class="dd-adjustitem" data-adjust="exposure">
+            <label for="dd-exposure" class="dd-adjustlabel">Belichtung <output id="dd-exposure-value" class="dd-rangevalue">0</output></label>
+            <input id="dd-exposure" class="dd-adjustslider" type="range" min="-100" max="100" step="1" value="0" aria-label="Belichtung: Schieberegler">
+            <div class="dd-adjuststepper" role="group" aria-label="Belichtung: präzise einstellen">
+              <button id="dd-exposure-minus" type="button" aria-label="Belichtung um 1 verringern">−</button>
+              <input id="dd-exposure-number" type="number" min="-100" max="100" step="1" value="0" inputmode="decimal" aria-label="Belichtung: Zahlenwert">
+              <button id="dd-exposure-plus" type="button" aria-label="Belichtung um 1 erhöhen">+</button>
+            </div>
+          </div>
+          <div class="dd-adjustitem" data-adjust="contrast">
+            <label for="dd-contrast" class="dd-adjustlabel">Kontrast <output id="dd-contrast-value" class="dd-rangevalue">0</output></label>
+            <input id="dd-contrast" class="dd-adjustslider" type="range" min="-100" max="100" step="1" value="0" aria-label="Kontrast: Schieberegler">
+            <div class="dd-adjuststepper" role="group" aria-label="Kontrast: präzise einstellen">
+              <button id="dd-contrast-minus" type="button" aria-label="Kontrast um 1 verringern">−</button>
+              <input id="dd-contrast-number" type="number" min="-100" max="100" step="1" value="0" inputmode="decimal" aria-label="Kontrast: Zahlenwert">
+              <button id="dd-contrast-plus" type="button" aria-label="Kontrast um 1 erhöhen">+</button>
+            </div>
+          </div>
+          <div class="dd-adjustitem" data-adjust="blacks">
+            <label for="dd-blacks" class="dd-adjustlabel">Schwarzwert <output id="dd-blacks-value" class="dd-rangevalue">0</output></label>
+            <input id="dd-blacks" class="dd-adjustslider" type="range" min="-100" max="100" step="1" value="0" aria-label="Schwarzwert: Schieberegler">
+            <div class="dd-adjuststepper" role="group" aria-label="Schwarzwert: präzise einstellen">
+              <button id="dd-blacks-minus" type="button" aria-label="Schwarzwert um 1 verringern">−</button>
+              <input id="dd-blacks-number" type="number" min="-100" max="100" step="1" value="0" inputmode="decimal" aria-label="Schwarzwert: Zahlenwert">
+              <button id="dd-blacks-plus" type="button" aria-label="Schwarzwert um 1 erhöhen">+</button>
+            </div>
+          </div>
+          <div class="dd-adjustitem" data-adjust="whites">
+            <label for="dd-whites" class="dd-adjustlabel">Weißwert <output id="dd-whites-value" class="dd-rangevalue">0</output></label>
+            <input id="dd-whites" class="dd-adjustslider" type="range" min="-100" max="100" step="1" value="0" aria-label="Weißwert: Schieberegler">
+            <div class="dd-adjuststepper" role="group" aria-label="Weißwert: präzise einstellen">
+              <button id="dd-whites-minus" type="button" aria-label="Weißwert um 1 verringern">−</button>
+              <input id="dd-whites-number" type="number" min="-100" max="100" step="1" value="0" inputmode="decimal" aria-label="Weißwert: Zahlenwert">
+              <button id="dd-whites-plus" type="button" aria-label="Weißwert um 1 erhöhen">+</button>
+            </div>
+          </div>
+          <div class="dd-adjustitem" data-adjust="brightness">
+            <label for="dd-brightness" class="dd-adjustlabel">Helligkeit <output id="dd-brightness-value" class="dd-rangevalue">0</output></label>
+            <input id="dd-brightness" class="dd-adjustslider" type="range" min="-100" max="100" step="1" value="0" aria-label="Helligkeit: Schieberegler">
+            <div class="dd-adjuststepper" role="group" aria-label="Helligkeit: präzise einstellen">
+              <button id="dd-brightness-minus" type="button" aria-label="Helligkeit um 1 verringern">−</button>
+              <input id="dd-brightness-number" type="number" min="-100" max="100" step="1" value="0" inputmode="decimal" aria-label="Helligkeit: Zahlenwert">
+              <button id="dd-brightness-plus" type="button" aria-label="Helligkeit um 1 erhöhen">+</button>
+            </div>
+          </div>
+          <div class="dd-adjustitem" data-adjust="saturation">
+            <label for="dd-saturation" class="dd-adjustlabel">Sättigung <output id="dd-saturation-value" class="dd-rangevalue">0</output></label>
+            <input id="dd-saturation" class="dd-adjustslider" type="range" min="-100" max="100" step="1" value="0" aria-label="Sättigung: Schieberegler">
+            <div class="dd-adjuststepper" role="group" aria-label="Sättigung: präzise einstellen">
+              <button id="dd-saturation-minus" type="button" aria-label="Sättigung um 1 verringern">−</button>
+              <input id="dd-saturation-number" type="number" min="-100" max="100" step="1" value="0" inputmode="decimal" aria-label="Sättigung: Zahlenwert">
+              <button id="dd-saturation-plus" type="button" aria-label="Sättigung um 1 erhöhen">+</button>
+            </div>
+          </div>
+          <div class="dd-adjustitem" data-adjust="gamma">
+            <label for="dd-gamma" class="dd-adjustlabel">Gamma <output id="dd-gamma-value" class="dd-rangevalue">1.00</output></label>
+            <input id="dd-gamma" class="dd-adjustslider" type="range" min="0.25" max="3" step="0.05" value="1" aria-label="Gamma: Schieberegler">
+            <div class="dd-adjuststepper" role="group" aria-label="Gamma: präzise einstellen">
+              <button id="dd-gamma-minus" type="button" aria-label="Gamma um 0.05 verringern">−</button>
+              <input id="dd-gamma-number" type="number" min="0.25" max="3" step="0.05" value="1" inputmode="decimal" aria-label="Gamma: Zahlenwert">
+              <button id="dd-gamma-plus" type="button" aria-label="Gamma um 0.05 erhöhen">+</button>
+            </div>
+          </div>
+          <div class="dd-adjustitem" data-adjust="threshold">
+            <label for="dd-threshold" class="dd-adjustlabel">Kontrast-Schwelle <output id="dd-threshold-value" class="dd-rangevalue">160</output></label>
+            <input id="dd-threshold" class="dd-adjustslider" type="range" min="0" max="255" step="1" value="160" aria-label="Kontrast-Schwelle: Schieberegler">
+            <div class="dd-adjuststepper" role="group" aria-label="Kontrast-Schwelle: präzise einstellen">
+              <button id="dd-threshold-minus" type="button" aria-label="Kontrast-Schwelle um 1 verringern">−</button>
+              <input id="dd-threshold-number" type="number" min="0" max="255" step="1" value="160" inputmode="decimal" aria-label="Kontrast-Schwelle: Zahlenwert">
+              <button id="dd-threshold-plus" type="button" aria-label="Kontrast-Schwelle um 1 erhöhen">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="dd-toolbar"><button id="dd-adjust-reset" type="button">Bildkorrekturen zurücksetzen</button><span class="dd-muted">Die Änderungen gelten für das gewählte Bild, nicht für deine Textfelder.</span></div>
+      </div>
+      <div class="dd-panel">
+        <h3>Bild drehen</h3>
+        <p id="dd-transform-target" class="dd-muted" aria-live="polite">Aktiv: Bild – Zoom und Rotation wirken auf die importierte Datei</p>
+        <div class="dd-rotationrow"><label for="dd-rotation" style="font-size:.85rem">Rotation des ausgewählten Elements</label><input id="dd-rotation" type="range" min="-180" max="180" step="1" value="0" aria-label="Rotation in Grad">
+          <input id="dd-rotation-num" type="number" min="-360" max="360" step="1" value="0" inputmode="numeric" aria-label="Rotation Grad"><span class="dd-badge">°</span><button id="dd-rotate90" type="button">↻ 90°</button></div>
+        <p class="dd-muted">Auch über den blauen Drehgriff oben links am Bild möglich.</p>
+      </div>
+      <div class="dd-historybar" aria-label="Bearbeitungsverlauf">
+        <button id="dd-undo" type="button" disabled aria-label="Letzte Änderung rückgängig machen" title="Rückgängig (Strg/Cmd+Z)">↶ Rückgängig</button>
+        <button id="dd-redo" type="button" disabled aria-label="Änderung wiederholen" title="Wiederholen (Strg/Cmd+Umschalt+Z)">↷ Wiederholen</button>
+        <span id="dd-history-status" aria-live="polite">Noch keine Bearbeitungsschritte</span>
+      </div>
+      <div class="dd-toolbar"><button id="dd-zoom-apply" type="button">Zoom anwenden</button><button id="dd-fit-reset" type="button">Einpassen</button><button id="dd-cover-reset" type="button">Füllen</button><button id="dd-clear" type="button">Warteschlange leeren</button><span id="dd-count" class="dd-muted">0 Etiketten</span></div>
+      <div id="dd-queue" class="dd-queue" aria-live="polite"></div>
+      <div class="dd-layer-files"><button id="dd-add-layer" type="button">+ Bilder/PDF zum Etikett hinzufügen</button>
+        <input id="dd-layer-files" type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" multiple hidden>
+        <button id="dd-crop-image" type="button">✂️ Gewähltes Bild zuschneiden</button></div>
+      <div id="dd-active-image" class="dd-activeimage" aria-live="polite">Bild auswählen und bearbeiten</div>
+      <p class="dd-layer-hint">Antippen wählt eine Bild- oder Textebene. Ziehen verschiebt nur dieses Element. Über „Ebenen“ kannst du Dateien und Texte nach vorne oder hinten legen oder mit 🔒 gegen Änderungen sperren. Der kleine Regler links skaliert nur die Ansicht – die Druckgröße bleibt unverändert.</p>
+      <div id="dd-preview-title" class="dd-muted">Ausschnitt & Druckvorschau</div>
+      <div class="dd-editorstage"><div id="dd-viewzoom-wrap" class="dd-viewzoom"><label for="dd-viewzoom">Ansicht</label><button id="dd-viewzoom-plus" type="button" aria-label="Ansicht vergrößern">+</button><input id="dd-viewzoom" type="range" min="20" max="250" step="5" value="100" aria-label="Gesamte Vorschau inklusive Etikett zoomen"><button id="dd-viewzoom-minus" type="button" aria-label="Ansicht verkleinern">−</button><div id="dd-viewzoom-value">100%</div></div><div id="dd-editorwrap" class="dd-editorwrap"><canvas id="dd-editor"></canvas></div></div>
+      <p class="dd-muted">Bedienung: Bild mit einem Finger verschieben, mit zwei Fingern zoomen, über den unteren rechten Griff skalieren oder über den oberen linken Griff drehen. Text antippen und verschieben. Mit dem linken Ansichtsschieber kannst du die komplette Vorschau inklusive rotem Druckrahmen größer oder kleiner darstellen. Der rote Rahmen ist der zu druckende Bereich.</p>
+      <div class="dd-row"><div style="flex:1;min-width:220px"><div class="dd-muted" style="margin-bottom:6px">Ausrichten</div><div class="dd-controlgrid"><button id="dd-align-left" type="button">Links</button><button id="dd-align-center-x" type="button">Horizontal zentrieren</button><button id="dd-align-right" type="button">Rechts</button><button id="dd-align-top" type="button">Oben</button><button id="dd-align-center-y" type="button">Vertikal zentrieren</button><button id="dd-align-bottom" type="button">Unten</button></div></div>
+      <div class="fit"><div class="dd-muted" style="margin-bottom:6px">Verschieben</div><div class="dd-direction"><span class="sp">·</span><button id="dd-nudge-up" type="button">↑</button><span class="sp">·</span><button id="dd-nudge-left" type="button">←</button><span class="sp">·</span><button id="dd-nudge-right" type="button">→</button><span class="sp">·</span><button id="dd-nudge-down" type="button">↓</button><span class="sp">·</span></div></div></div>
+      <div class="dd-panel" id="dd-text-panel">
+        <h3>✏️ Schrift / Text hinzufügen</h3>
+        <div class="dd-toolbar"><button id="dd-add-text" type="button" class="primary">+ Textfeld</button><button id="dd-add-blank" type="button">Leeres Etikett</button>
+          <button id="dd-duplicate-text" type="button">Duplizieren</button><button id="dd-remove-text" type="button">Löschen</button></div>
+        <div id="dd-textlist" class="dd-textlist" aria-label="Textfelder"></div>
+        <div id="dd-text-controls">
+          <label for="dd-textcontent" class="dd-section-title">Textinhalt (mehrzeilig möglich)</label><textarea id="dd-textcontent" placeholder="Deinen Text eingeben"></textarea>
+          <div class="dd-row"><label>Schriftart<select id="dd-font"><option value="system:sans-serif">Arial / Sans Serif</option><option value="system:serif">Serif</option><option value="system:monospace">Monospace</option><option value="system:cursive">Handschrift / Cursive</option></select></label>
+            <label>Schriftgröße (px)<input id="dd-fontsize" type="number" min="4" max="600" step="1" value="32" inputmode="numeric"></label></div>
+          <div class="dd-row"><label>Text ausrichten<select id="dd-textalign"><option value="left">Links</option><option value="center" selected>Mitte</option><option value="right">Rechts</option><option value="justify">Blocksatz</option></select></label>
+            <label>Textfeldbreite (%)<input id="dd-textwidth" type="number" min="10" max="200" value="85" inputmode="numeric"></label></div>
+          <div class="dd-textsize-grid">
+            <label>Textfeld-Breite (px)<input id="dd-boxwidth" type="number" min="20" max="4000" value="150" inputmode="numeric"></label>
+            <label>Textfeld-Höhe (px)<input id="dd-boxheight" type="number" min="20" max="4000" value="80" inputmode="numeric"></label>
+          </div>
+          <div class="dd-toolbar">
+            <button id="dd-textbold" type="button" aria-pressed="false"><b>B</b></button>
+            <button id="dd-textitalic" type="button" aria-pressed="false"><i>I</i></button>
+            <button id="dd-textunderline" type="button" aria-pressed="false"><u>U</u></button>
+            <button id="dd-textstrike" type="button" aria-pressed="false"><s>S</s></button>
+            <label class="dd-check"><input id="dd-textinverse" type="checkbox"> Schwarz ausgefülltes Textfeld / weiße Schrift</label>
+          </div>
+          <div class="dd-row"><label>Zeichenabstand (px)<input id="dd-letterspace" type="number" min="-5" max="30" step=".5" value="0"></label>
+            <label>Zeilenabstand (%)<input id="dd-lineheight" type="number" min="70" max="300" step="5" value="120"></label></div>
+          <div class="dd-section-title">Textrichtung</div>
+          <div class="dd-flow-buttons">
+            <button id="dd-flow-horizontal" type="button" aria-pressed="true">ABC → Gerade</button>
+            <button id="dd-flow-vertical" type="button" aria-pressed="false">ABC ↓ Vertikal</button>
+            <button id="dd-flow-curve" type="button" aria-pressed="false">ABC ⤿ Rundung</button>
+          </div>
+                    <div id="dd-curve-controls" class="dd-subpanel" hidden>
+            <div class="dd-caption">Niimbot-ähnliche Rundung: Bogenposition, Innen-/Außenseite, Radius und Winkel direkt für runde Sticker einstellen.</div>
+            <div class="dd-section-title" style="margin-top:0">Bogenposition</div>
+            <div class="dd-flow-buttons">
+              <button id="dd-curve-place-top" type="button" aria-pressed="true">Oben</button>
+              <button id="dd-curve-place-bottom" type="button" aria-pressed="false">Unten</button>
+              <button id="dd-curve-place-circle" type="button" aria-pressed="false">Voller Kreis</button>
+            </div>
+            <div class="dd-section-title">Innen / Außen</div>
+            <div class="dd-flow-buttons">
+              <button id="dd-curve-facing-outside" type="button" aria-pressed="true">Außen</button>
+              <button id="dd-curve-facing-inside" type="button" aria-pressed="false">Innen</button>
+              <button id="dd-curve-duplicate-opposite" type="button">Gegenbogen duplizieren</button>
+            </div>
+            <div class="dd-rotationrow" style="margin-top:8px"><label for="dd-curvedeg" style="font-size:.85rem">Bogenwinkel</label><input id="dd-curvedeg" type="range" min="0" max="360" step="1" value="180" aria-label="Text-Rundung in Grad">
+            <input id="dd-curvedeg-num" type="number" min="0" max="360" step="1" value="180" inputmode="numeric" aria-label="Text-Rundung Grad"><span class="dd-badge">°</span></div>
+            <div class="dd-rotationrow" style="margin-top:8px"><label for="dd-curveradius" style="font-size:.85rem">Radius</label><input id="dd-curveradius" type="range" min="0" max="1200" step="1" value="0" aria-label="Text-Radius in Pixel">
+            <input id="dd-curveradius-num" type="number" min="0" max="1200" step="1" value="0" inputmode="numeric" aria-label="Text-Radius in Pixel"><span class="dd-badge">px</span><button id="dd-curveradius-auto" type="button">Auto</button></div>
+            <p class="dd-caption" style="margin:8px 0 0">0 px = Radius automatisch aus der Textfeldgröße ableiten. Für getrennten oberen und unteren Rundtext kannst du „Gegenbogen duplizieren“ verwenden und beide Texte anschließend separat bearbeiten.</p>
+          </div>
+          <div class="dd-row"><label>Textrotation (°)<input id="dd-textrotation" type="number" min="-360" max="360" step="1" value="0"></label>
+            <label>Textfeld-Zoom (%)<input id="dd-textzoom" type="number" min="5" max="4000" step="1" value="100" inputmode="numeric"></label>
+            <label>Textgröße anpassen<select id="dd-textscaling"><option value="none">Wie eingegeben</option><option value="fit">Automatisch in Textbreite einpassen</option></select></label></div>
+          <div class="dd-row"><label>Vertikale Textausrichtung<select id="dd-textvertical"><option value="top">Oben</option><option value="middle" selected>Mitte</option><option value="bottom">Unten</option></select></label>
+            <label>Zeilenumbruch<select id="dd-textwrap"><option value="word">Nach Wörtern</option><option value="char">Nach Zeichen</option><option value="off">Kein automatischer Umbruch</option></select></label></div>
+          <div class="dd-toolbar"><button id="dd-txt-align-left" type="button">↤ Links</button><button id="dd-txt-align-hcenter" type="button">↔ Mitte</button><button id="dd-txt-align-right" type="button">Rechts ↦</button><button id="dd-txt-align-top" type="button">↑ Oben</button><button id="dd-txt-align-vcenter" type="button">↕ Mitte</button><button id="dd-txt-align-bottom" type="button">↓ Unten</button></div>
+          <div class="dd-row"><label>Text horizontal (px)<input id="dd-textx" type="number" step="1" inputmode="decimal"></label><label>Text vertikal (px)<input id="dd-texty" type="number" step="1" inputmode="decimal"></label></div>
+          <p class="dd-muted">Textfeld antippen: es wird aktiv. Mit einem Finger verschieben, zwei Finger drehen/vergrößern. Griff oben links: drehen; rechts: Breite; unten: Höhe; unten rechts: Text und Rahmen gemeinsam skalieren. Die Rotation/Zoom-Steuerung oberhalb der Vorschau gilt jetzt für das aktive Textfeld. Der schwarze Hintergrund bei „Weiß auf Schwarz“ füllt immer das ganze Textfeld.</p>
+          <div class="dd-toolbar"><button id="dd-select-image" type="button">Bild auswählen</button><button id="dd-text-tofront" type="button">In den Vordergrund</button><button id="dd-text-toback" type="button">In den Hintergrund</button></div>
+          <div class="dd-caption">Ebenen (oben in der Liste = vorne). Mehrere Bilder und Texte lassen sich unabhängig verschieben, zuschneiden und stapeln.</div><div id="dd-layers" class="dd-layerlist"></div>
+        </div>
+        <details style="margin-top:12px" open><summary style="font-weight:700;cursor:pointer">Eigene Schriftarten dauerhaft speichern</summary>
+          <p class="dd-muted">TTF, OTF, WOFF oder WOFF2 auswählen. Fonts werden lokal in diesem Browserprofil (IndexedDB) gespeichert und beim nächsten Besuch wieder geladen.</p>
+          <input id="dd-fontfile" type="file" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" multiple>
+          <p id="dd-fontstatus" class="dd-muted" role="status">Noch keine eigenen Fonts geladen.</p><div id="dd-fontlist"></div>
+          <button id="dd-fontpersistent" type="button">Speicher dauerhaft anfordern</button>
+          <p class="dd-muted">Achtung: Browserdaten löschen oder einen anderen Browser/eine andere Website verwenden entfernt bzw. trennt die gespeicherten Fonts. Bewahre deine Original-Fontdateien als Backup auf.</p>
+        </details>
+      </div>
+      <div class="dd-row"><button id="dd-print" type="button" class="primary" disabled>🖨 Alle nacheinander drucken</button>
+        <button id="dd-stop" type="button" disabled>Nach dem Stapel stoppen</button></div>
+      <progress id="dd-progress" max="100" value="0"></progress>
+      <div id="dd-state" role="status" aria-live="polite">Dateien auswählen, Drucker verbinden und Rolle wählen.</div>
+      <p class="dd-warning">Tipp: Für den ersten Test nur 1 Etikett drucken. Ein abgebrochener Auftrag kann bereits teilweise gedruckt sein. Ein Bluetooth-Dialog muss über den originalen Verbindungsbutton oben geöffnet werden.</p>
+    </section>`;
+    if(!html.includes('</head>')||!html.includes('</body>')||!html.includes('<body>')){
+      document.getElementById('boot-error').textContent='Ungültiges HTML aus der Originalquelle.';return;
+    }
+    html=html.replace('<head>', '<head>'+base+'<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b2444">');
+    html=html.replace('</head>',extraStyle+'</head>');
+    html=html.replace('<body>','<body>'+intro);
+    html=html.replace('<details id="rollbox">',addonMarkup+'<details id="rollbox">');
+    html=html.replace('</body>',`<dialog id="dd-crop-dialog" aria-label="Bild zuschneiden">
+      <div class="crop-body">
+        <h3>✂️ Bild zuschneiden</h3><div id="dd-crop-title" class="dd-caption">Bildausschnitt festlegen</div>
+        <div id="dd-crop-presets" class="crop-presets" role="group" aria-label="Bildverhältnis">
+          <button type="button" data-crop-preset="free" aria-pressed="true">Frei</button>
+          <button type="button" data-crop-preset="1:1">1×1</button><button type="button" data-crop-preset="4:6">4×6</button>
+          <button type="button" data-crop-preset="3:5">3×5</button><button type="button" data-crop-preset="5:8">5×8</button>
+          <button type="button" data-crop-preset="2:3">2×3</button><button type="button" data-crop-preset="4:7">4×7</button>
+          <button type="button" data-crop-preset="5:7">5×7</button><button type="button" data-crop-preset="circle">◯ Kreis</button>
+        </div>
+        <canvas id="dd-crop-canvas" aria-label="Ausschnitt verschieben und an der unteren rechten Ecke vergrößern"></canvas>
+        <p class="dd-caption">Im Bild verschieben; den blauen Griff unten rechts ziehen, um den Ausschnitt anzupassen. Der Ausschnitt bleibt beim Drucken erhalten. Kreis erzeugt eine transparente runde Maske.</p>
+        <div class="crop-actions"><button type="button" id="dd-crop-reset">Zurücksetzen</button><button type="button" id="dd-crop-cancel">Abbrechen</button><button type="button" id="dd-crop-save">Übernehmen</button></div>
+      </div></dialog><script type="module" src="${ownAddon}"></scr`+`ipt></body>`);
+    document.open(); document.write(html); document.close();
+  })().catch(e=>{
+    const el=document.getElementById('boot-error');
+    if(el)el.textContent='Start fehlgeschlagen: '+((e&&e.message)||e);
+    const btn=document.getElementById('retry');if(btn)btn.hidden=false;
+  });
+  </script>
+</body>
+</html>
