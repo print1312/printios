@@ -101,38 +101,37 @@
   <canvas id="preview"></canvas>
 
   <details id="rollbox">
-    <summary>Rolls <span id="rollcount">(0 saved)</span></summary>
-    <p class="muted">Fit a roll, read its tag, type the label's real size in mm, save.
-       The millimetres are remembered against the tag's barcode; the pixels come from
-       whichever printer is selected when the roll is restored on the next
-       <em>Connect &amp; identify</em>.</p>
+    <summary>Rollen &amp; eigene Etikettgrößen <span id="rollcount">(0 gespeichert)</span></summary>
+    <p class="muted">Rolle einlegen, Chip lesen, die echte Etikettgröße in mm eintragen und speichern.
+       Die Millimeter werden zum Barcode der Rolle gemerkt; die Pixel ergeben sich aus dem Drucker,
+       der beim nächsten <em>Drucker verbinden</em> gewählt ist. Ohne Chip wird nur die Größe angelegt.</p>
     <div class="rollctl">
-      <button id="rollread" type="button">Read tag</button>
-      <span id="rolltag" class="muted">no tag read yet</span>
+      <button id="rollread" type="button">Rollen-Chip lesen</button>
+      <span id="rolltag" class="muted">noch kein Rollen-Chip gelesen</span>
     </div>
     <div class="rollform">
-      <label>Name <input id="rollname" type="text" placeholder="cable flag"></label>
-      <label>Width mm (across the head) <input id="rollw" type="number" step="0.1" min="1" inputmode="decimal"></label>
-      <label>Length mm (along the feed) <input id="rollh" type="number" step="0.1" min="1" inputmode="decimal"></label>
-      <label>Colour <input id="rollcolor" type="text" placeholder="white"></label>
+      <label>Name <input id="rollname" type="text" placeholder="z. B. Kabelfahne"></label>
+      <label>Breite mm (quer zum Druckkopf) <input id="rollw" type="number" step="0.1" min="1" inputmode="decimal"></label>
+      <label>Länge mm (in Laufrichtung) <input id="rollh" type="number" step="0.1" min="1" inputmode="decimal"></label>
+      <label>Farbe <input id="rollcolor" type="text" placeholder="weiß"></label>
     </div>
-    <p class="muted">Narrow labels feed standing: a 15 &times; 50 roll is width 15, length 50.</p>
+    <p class="muted">Schmale Etiketten laufen hochkant durch: Eine 15 &times; 50-Rolle hat Breite 15 und Länge 50.</p>
     <div id="rollcalc" class="muted"></div>
     <div class="rollctl">
-      <button id="rollsave" type="button">Save roll</button>
-      <button id="rollcopy" type="button">Copy JSON</button>
-      <button id="rollpaste" type="button">Import JSON</button>
+      <button id="rollsave" type="button">Rolle / Größe speichern</button>
+      <button id="rollcopy" type="button">JSON kopieren</button>
+      <button id="rollpaste" type="button">JSON importieren</button>
     </div>
     <div id="rolllist"></div>
     <textarea id="rolljson" spellcheck="false"></textarea>
   </details>
 
   <details id="logbox" open>
-    <summary>Log <span id="logcount">(0 lines)</span></summary>
+    <summary>Protokoll <span id="logcount">(0 Zeilen)</span></summary>
     <div class="logctl">
-      <button id="logcopy" type="button">Copy log</button>
-      <button id="logclear" type="button">Clear</button>
-      <label class="wm">Write mode:
+      <button id="logcopy" type="button">Protokoll kopieren</button>
+      <button id="logclear" type="button">Leeren</button>
+      <label class="wm">Schreibmodus:
         <select id="optwritemode">
           <option value="auto" selected>auto (detected)</option>
           <option value="fast">fast (unacked, no gap)</option>
@@ -175,7 +174,7 @@
         div.textContent = text;
         pre.appendChild(div);
         while (lines.length > MAX) { lines.shift(); pre.removeChild(pre.firstChild); }
-        counter.textContent = `(${lines.length} line${lines.length === 1 ? "" : "s"})`;
+        counter.textContent = `(${lines.length} Zeile${lines.length === 1 ? "" : "n"})`;
         pre.scrollTop = pre.scrollHeight;
       }
 
@@ -190,7 +189,7 @@
       });
 
       document.getElementById("logclear").addEventListener("click", () => {
-        lines.length = 0; pre.textContent = ""; counter.textContent = "(0 lines)";
+        lines.length = 0; pre.textContent = ""; counter.textContent = "(0 Zeilen)";
       });
 
       // Reading a trace off a phone screen is the whole problem, so copying it has
@@ -222,8 +221,8 @@
       document.getElementById("logcopy").addEventListener("click", async () => {
         const btn = document.getElementById("logcopy");
         const ok = await copyText(lines.join("\n"));
-        btn.textContent = ok ? "Copied ✓" : "Copy failed";
-        setTimeout(() => { btn.textContent = "Copy log"; }, 1500);
+        btn.textContent = ok ? "Kopiert ✓" : "Kopieren fehlgeschlagen";
+        setTimeout(() => { btn.textContent = "Protokoll kopieren"; }, 1500);
       });
     })();
   </script>
@@ -250,7 +249,7 @@
     const fail = (e) => {
       const m = (e && e.message) || e;
       console.error("error: " + m);
-      status("error: " + m);
+      status("Fehler: " + m);
     };
 
     document.title = "niimbot demo — driver " + (Niimbot.VERSION || "?");
@@ -294,8 +293,8 @@
       // place — their browser (Brave) just doesn't expose the API. `isSecureContext` is
       // the one signal the browser itself gates on, so it's what tells the two apart.
       $("status").innerHTML = window.isSecureContext
-        ? '<span class="warn">This browser doesn\'t expose Web Bluetooth (the page is secure, so that\'s not the issue). Use Chrome, Edge or Opera on desktop, or Chrome on Android — Brave and some other Chromium builds ship Web Bluetooth off by default, behind a flag. On iOS use <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank" rel="noopener">Bluefy</a>, since Safari and Chrome do not support Web Bluetooth there.</span>'
-        : '<span class="warn">Web Bluetooth unavailable. Use Chrome/Edge (desktop) or Chrome (Android) over HTTPS or localhost, or on iOS use <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank" rel="noopener">Bluefy</a>, since Safari and Chrome do not support Web Bluetooth there.</span>';
+        ? '<span class="warn">Dieser Browser bietet kein Web Bluetooth. Am Computer Chrome oder Edge verwenden, auf dem iPhone/iPad die App <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank" rel="noopener">Bluefy</a>.</span>'
+        : '<span class="warn">Web Bluetooth nicht verfügbar: Seite über HTTPS öffnen (GitHub-Pages-Link) – auf dem iPhone in <a href="https://apps.apple.com/app/bluefy-web-ble-browser/id1492822055" target="_blank" rel="noopener">Bluefy</a>.</span>';
       $("print").disabled = true;
     }
 
@@ -363,7 +362,7 @@
       const def = reg.models[$("model").value].density;
       $("density").innerHTML = "";
       for (let d = 1; d <= 5; d++) {
-        $("density").add(new Option(d === def ? `${d} (model default)` : String(d), String(d)));
+        $("density").add(new Option(d === def ? `${d} (Standard)` : String(d), String(d)));
       }
       $("density").value = String(def);
     }
@@ -664,7 +663,7 @@
           w_mm: mm.w_mm, h_mm: mm.h_mm, w_px: geom.w_px, h_px: geom.h_px, dpi: model.dpi,
           margin: 10,
         };
-        if (!saveCustomSizes(sizes)) { status("Rolls: could not save the size (storage refused)."); return null; }
+        if (!saveCustomSizes(sizes)) { status("Rollen: Größe konnte nicht gespeichert werden (Speicher verweigert)."); return null; }
         console.log(`[rolls] created custom size "${id}": ${geom.w_px} × ${geom.h_px} px at ${model.dpi} dpi.`);
         if (geom.clamped) {
           console.warn(`[rolls] ⚠ "${id}": width clamped from ${geom.label_px} px to the ${mk} printhead (${geom.w_px} px) — the label's outer edge will not print.`);
@@ -766,7 +765,7 @@
       const rolls = labelMemory.all();
       const custom = customSizes();
       const keys = Object.keys(rolls);
-      $("rollcount").textContent = `(${keys.length} saved)`;
+      $("rollcount").textContent = `(${keys.length} gespeichert)`;
       $("rolllist").innerHTML = "";
       for (const bc of keys) {
         const r = rolls[bc];
@@ -791,12 +790,12 @@
         if (!mm) {
           const w = document.createElement("span");
           w.className = "warn";
-          w.textContent = " (size not defined here)";
+          w.textContent = " (Größe hier nicht definiert)";
           txt.appendChild(w);
         }
         const del = document.createElement("button");
         del.type = "button";
-        del.textContent = "Forget";
+        del.textContent = "Vergessen";
         del.addEventListener("click", () => {
           labelMemory.forget(bc);
           console.log(`[rolls] forgot tag ${bc}.`);
@@ -806,14 +805,14 @@
         $("rolllist").appendChild(row);
       }
       if (!keys.length) {
-        $("rolllist").innerHTML = '<p class="muted">nothing saved yet</p>';
+        $("rolllist").innerHTML = '<p class="muted">noch nichts gespeichert</p>';
       }
       // Custom sizes outlive the rolls that introduced them (a roll can be forgotten
       // while its size stays in use), so they are counted separately rather than
       // silently vanishing.
       const nCustom = Object.keys(custom).length;
       if (nCustom) {
-        $("rollcount").textContent = `(${keys.length} saved, ${nCustom} custom size${nCustom === 1 ? "" : "s"})`;
+        $("rollcount").textContent = `(${keys.length} gespeichert, ${nCustom} eigene Größe${nCustom === 1 ? "" : "n"})`;
       }
     }
 
@@ -837,13 +836,13 @@
         }
         if (!rfid) {
           lastTag = null;
-          $("rolltag").textContent = "no tag detected — is a roll fitted and the lid closed?";
+          $("rolltag").textContent = "Kein Chip erkannt – ist eine Rolle eingelegt und der Deckel geschlossen?";
           console.log("[rolls] no consumable tag detected after 2 attempts.");
           return;
         }
         lastTag = rfid;
         sessionTagBc = rfid.barCode;
-        $("rolltag").textContent = `${rfid.barCode} · serial ${rfid.serialNumber || "?"} · ${rfid.capacity != null ? rfid.capacity + " labels" : "capacity ?"}`;
+        $("rolltag").textContent = `${rfid.barCode} · Seriennr. ${rfid.serialNumber || "?"} · ${rfid.capacity != null ? rfid.capacity + " Etiketten" : "Kapazität ?"}`;
         console.log(`[rolls] tag ${rfid.barCode} read (serial ${rfid.serialNumber || "?"}).`);
         // Pre-fill from what is already known about this roll, so re-saving does not
         // mean retyping — and so a mistake is visible before it is overwritten.
@@ -857,7 +856,7 @@
         }
       } catch (e) {
         lastTag = null;
-        $("rolltag").textContent = "could not read the tag";
+        $("rolltag").textContent = "Chip konnte nicht gelesen werden";
         fail(e);
       } finally {
         $("rollread").disabled = false;
@@ -866,7 +865,7 @@
 
     $("rollsave").addEventListener("click", () => {
       const w = rollNum("rollw"), h = rollNum("rollh");
-      if (!w || !h) { status("Rolls: enter a width and height in mm first."); return; }
+      if (!w || !h) { status("Rollen: Bitte zuerst Breite und Länge in mm eingeben."); return; }
       const name = $("rollname").value.trim();
       const colour = $("rollcolor").value.trim();
 
@@ -877,7 +876,7 @@
       if (name) rec.name = name;
       if (colour) rec.color = colour;
       const id = sizeForRoll(rec);
-      if (!id) { status("Rolls: could not find or create a size for this printer."); return; }
+      if (!id) { status("Rollen: Für diesen Drucker konnte keine Größe gefunden oder angelegt werden."); return; }
       $("size").value = id;
       refresh();
 
@@ -890,15 +889,15 @@
         if (!colour) delete out.color;
         if (labelMemory.remember(lastTag.barCode, out)) {
           console.log(`[rolls] saved tag ${lastTag.barCode} → ${w} × ${h} mm (size "${id}")${colour ? " (" + colour + ")" : ""}.`);
-          status(`Rolls: saved ${lastTag.barCode} → ${w} × ${h} mm${colour ? " (" + colour + ")" : ""}.`);
+          status(`Rollen: ${lastTag.barCode} → ${w} × ${h} mm gespeichert${colour ? " (" + colour + ")" : ""}.`);
         } else {
-          status("Rolls: the size was saved but the roll record was not (storage refused).");
+          status("Rollen: Größe gespeichert, Rollen-Zuordnung aber nicht (Speicher verweigert).");
         }
       } else {
         // Saving a size with no tag read is legitimate — you may be defining a size
         // before the roll is fitted — but it must not look like a roll was registered.
         console.log(`[rolls] size "${id}" selected, but NO tag was read, so no barcode was linked.`);
-        status(`Rolls: size ${w} × ${h} mm saved and selected. No tag read — press "Read tag" with the roll fitted to link it.`);
+        status(`Rollen: Größe ${w} × ${h} mm gespeichert und ausgewählt. Kein Chip gelesen – zum Verknüpfen „Rollen-Chip lesen“ mit eingelegter Rolle tippen.`);
       }
       renderRolls();
     });
@@ -909,14 +908,14 @@
     $("rollcopy").addEventListener("click", async () => {
       const payload = JSON.stringify({ sizes: customSizes(), rolls: labelMemory.all() }, null, 1);
       const ok = await window.demoCopyText(payload);
-      $("rollcopy").textContent = ok ? "Copied ✓" : "Copy failed";
-      setTimeout(() => { $("rollcopy").textContent = "Copy JSON"; }, 1600);
+      $("rollcopy").textContent = ok ? "Kopiert ✓" : "Kopieren fehlgeschlagen";
+      setTimeout(() => { $("rollcopy").textContent = "JSON kopieren"; }, 1600);
       if (!ok) {
         // Never leave the user believing an empty clipboard is their data.
         $("rolljson").style.display = "block";
         $("rolljson").value = payload;
         $("rolljson").select();
-        status("Rolls: the clipboard refused — the JSON is in the box below, select and copy it by hand.");
+        status("Rollen: Zwischenablage nicht verfügbar – das JSON steht im Feld darunter und kann von Hand kopiert werden.");
       }
     });
 
@@ -933,8 +932,8 @@
       }
       let data;
       try { data = JSON.parse(box.value); }
-      catch (e) { status("Rolls: that is not valid JSON — " + e.message); return; }
-      if (!data || typeof data !== "object") { status("Rolls: the JSON must be an object."); return; }
+      catch (e) { status("Rollen: Kein gültiges JSON – " + e.message); return; }
+      if (!data || typeof data !== "object") { status("Rollen: Das JSON muss ein Objekt sein."); return; }
 
       // Imported JSON is UNTRUSTED — the whole point of this button is that it arrives
       // from another device or another person. Nothing here is rendered as markup (the
@@ -998,7 +997,7 @@
 
       populateSizes(); renderRolls();
       box.style.display = "none"; box.value = "";
-      const msg = `Rolls: imported ${nSizes} size(s) and ${nRolls} roll(s). Existing entries were kept, not overwritten.`;
+      const msg = `Rollen: ${nSizes} Größe(n) und ${nRolls} Rolle(n) importiert. Bestehende Einträge blieben erhalten.`;
       console.log("[rolls] " + msg);
       status(msg);
     });
@@ -1049,9 +1048,9 @@
       const ev = (st.decoded && st.decoded.evidence && st.decoded.evidence.heartbeat) || {};
       const mark = (k) => (ev[k] === "observed" ? "" : ` (${ev[k] || "?"})`);
       const bat = Niimbot.battery(st);
-      const batteryPart = bat ? `, battery ${bat.text}${bat.evidence === "observed" ? "" : " (inferred)"}` : "";
-      return `lid ${hb.lidClosed ? "closed" : "open"}${mark("lidClosed")}, `
-        + `paper ${hb.paperInserted ? "in" : "out"}${mark("paperInserted")}`
+      const batteryPart = bat ? `, Akku ${bat.text}${bat.evidence === "observed" ? "" : " (geschätzt)"}` : "";
+      return `Deckel ${hb.lidClosed ? "zu" : "offen"}${mark("lidClosed")}, `
+        + `Papier ${hb.paperInserted ? "eingelegt" : "fehlt"}${mark("paperInserted")}`
         + `${batteryPart}`;
     }
 
@@ -1060,7 +1059,7 @@
     $("identify").addEventListener("click", async () => {
       $("identify").disabled = true;
       try {
-        status("connecting… (pick your printer from the chooser)");
+        status("Verbinde … Drucker in der Bluetooth-Auswahl wählen.");
         // Filter the chooser to the union of all known model name prefixes, so it
         // lists only Niimbot printers we recognise but still finds any of them.
         const sel = reg.models[$("model").value];
@@ -1074,9 +1073,9 @@
           $("model").value = matched;
           populateSizes();
           refresh();
-          msg = `Identified: ${info.label} — ${detail}. Model "${matched}" selected.`;
+          msg = `Verbunden: ${info.label}.`; console.log(`[demo] ${detail}`);
         } else {
-          msg = `Identified: ${info.label} — ${detail}. No matching model in registry — selection left as is.`;
+          msg = `Verbunden: ${info.label} – Modell nicht in der Liste, Auswahl unverändert.`; console.log(`[demo] ${detail}`);
         }
         status(msg);
         // Restore the size remembered for this roll, and show lid/paper/battery
@@ -1102,7 +1101,7 @@
     $("disconnect").addEventListener("click", async () => {
       try {
         await Niimbot.disconnect();
-        status("disconnected — pick a printer and identify again.");
+        status("Getrennt. Zum erneuten Verbinden „Drucker verbinden“ tippen.");
       } catch (e) {
         fail(e);
       }
@@ -1116,7 +1115,7 @@
     $("readstatus").addEventListener("click", async () => {
       $("readstatus").disabled = true;
       try {
-        status("reading status…");
+        status("Lese Druckerstatus …");
         const st = await Niimbot.getStatus();
         const dump = (u8) => (u8 ? Array.from(u8).map((b) => b.toString(16).padStart(2, "0")).join(" ") : "(no answer)");
         console.log(`[status] confidence=${st.confidence}`);
@@ -1132,8 +1131,8 @@
         // line beats a fake "0".
         const summary = statusSummary(st);
         status(summary
-          ? `status: ${summary}. See the log for the raw dump.`
-          : "status read — layout not recognised, raw bytes are in the log.");
+          ? `Status: ${summary}.`
+          : "Status gelesen – Format unbekannt, Rohdaten stehen im Protokoll.");
         // Report the label memory, but do NOT auto-select here: this button is a
         // read, and moving the dropdown under a user who just chose a size would be
         // the surprise the log line is supposed to prevent.

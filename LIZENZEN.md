@@ -1,6 +1,6 @@
 # Drittanbieter und Lizenzen
 
-Dieses Paket enthält aus der vom Nutzer bereitgestellten V15-ZIP unverändert die entsprechenden Treiberversionen und die PDF.js-Dateien (die Dateien wurden ausschließlich an den beschriebenen Ladepfaden angepasst bzw. verschoben).
+Dieses Paket enthält die Niimbot-Treiberdateien und PDF.js. `niimbot.js`, `label-memory.js`, `label-size.js`, `registry.json` und die PDF.js-Dateien sind unverändert. In `niimbot-demo.html` wurden in V18 nur sichtbare Texte ins Deutsche übersetzt.
 
 - Niimbot Web Bluetooth: `niimbot.js`, `label-memory.js`, `label-size.js`, `registry.json` und `niimbot-demo.html`. Projekt: https://github.com/iscarelli/niimbot-web-bluetooth. Original-Lizenztext: https://github.com/iscarelli/niimbot-web-bluetooth/blob/main/LICENSE. Die Lizenz lag im ursprünglichen Paket unter `vendor/niimbot/LICENSE`.
 - PDF.js 3.11.174: `pdf.min.js`, `pdf.worker.min.js`. Lizenz: Apache License 2.0, https://www.apache.org/licenses/LICENSE-2.0. Original-Lizenztext im V15-Paket: `vendor/pdfjs/LICENSE`. Die Lizenzhinweise innerhalb der JavaScript-Dateien sind erhalten.

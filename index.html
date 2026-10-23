@@ -4,329 +4,307 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#0b2444">
-  <title>Niimbot Druckstudio – iPhone & Bluefy</title>
+  <title>Niimbot Druckstudio</title>
   <style>
-    :root{font-family:system-ui,-apple-system,sans-serif;color:#16243b;background:#f3f6fa}
+    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#16243b;background:#eef2f8}
     body{margin:0;padding:24px 16px}.loading{margin:12vh auto;max-width:540px;padding:26px;background:white;border:1px solid #dde6f1;border-radius:18px;box-shadow:0 10px 36px #16325814}
-    h1{margin:0 0 12px;font-size:1.6rem}p{line-height:1.5}#boot-error{white-space:pre-wrap;color:#b42318}
+    h1{margin:0 0 12px;font-size:1.5rem}p{line-height:1.5}#boot-error{white-space:pre-wrap;color:#475569}#boot-error.err{color:#b42318}
     button{min-height:44px;padding:10px 14px;border-radius:9px;border:0;background:#1659a9;color:white;font:inherit;font-weight:700}
   </style>
 </head>
 <body>
   <div class="loading" role="status">
-    <h1>Niimbot Druckstudio</h1>
-    <p>Die originale Niimbot-Web-App und die iPhone-Erweiterung werden geladen …</p>
-    <p id="boot-error" style="color:#475569">Druckstudio V15 und die mitgelieferten Druckermodule werden geladen.</p>
-    <p style="font-size:.86rem;color:#475569">Hinweis: Die Bluetooth-Druckerauswahl erscheint erst, nachdem die Original-Demo geladen wurde. Auf dem iPhone die veröffentlichte Seite in Bluefy öffnen.</p>
+    <h1>🏷️ Niimbot Druckstudio</h1>
+    <p id="boot-error">Druckstudio wird geladen …</p>
+    <p style="font-size:.86rem;color:#475569">Auf dem iPhone die veröffentlichte HTTPS-Adresse in der App <strong>Bluefy</strong> öffnen – Safari und Chrome auf iOS unterstützen kein Web Bluetooth.</p>
     <button id="retry" onclick="location.reload()" hidden>Erneut versuchen</button>
   </div>
   <script>
   (async function loadOriginalDemo(){
+    const APP_VERSION='18';
     const REMOTE = new URL('./',window.location.href).href;
-    const SOURCES = [
-      REMOTE + 'niimbot-demo.html'
-    ];
-    let html = '',lastError='';
-    for(const url of SOURCES){
-      try{
-        const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
-        let res;try{res=await fetch(url,{cache:'no-cache',signal:controller.signal});}finally{clearTimeout(timeout);}
-        if(!res.ok)throw Error('HTTP '+res.status);
-        const source=await res.text();
-        if(!source.includes('id="identify"') || !source.includes('id="rollbox"') || !source.includes('Niimbot'))
-          throw Error('Quelldatei entspricht nicht der erwarteten Original-Demo.');
-        html=source.replace('const t = Date.now();', 'const t = "f20bb901-v15";').replace(/<html[^>]*>/,'<html lang="de">').replace(/<title>[\s\S]*?<\/title>/,'<title>Niimbot Druckstudio V15</title>');break;
-      }catch(e){lastError=(e&&e.message)||String(e);}
-    }
+    const showError=(text)=>{const el=document.getElementById('boot-error');el.textContent=text;el.className='err';document.getElementById('retry').hidden=false;};
+    if(location.protocol==='file:'){showError('Bitte nicht als lokale Datei öffnen. Die App funktioniert nur über eine Webadresse (GitHub Pages, https://…) oder einen lokalen Webserver.');return;}
+    let html='',lastError='';
+    try{
+      const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);
+      let res;try{res=await fetch(REMOTE+'niimbot-demo.html?v='+APP_VERSION,{cache:'no-cache',signal:controller.signal});}finally{clearTimeout(timeout);}
+      if(!res.ok)throw Error('HTTP '+res.status);
+      const source=await res.text();
+      if(!source.includes('id="identify"') || !source.includes('id="rollbox"') || !source.includes('Niimbot'))
+        throw Error('niimbot-demo.html hat nicht den erwarteten Inhalt.');
+      html=source.replace('const t = Date.now();', 'const t = "v'+APP_VERSION+'";').replace(/<html[^>]*>/,'<html lang="de">').replace(/<title>[\s\S]*?<\/title>/,'<title>Niimbot Druckstudio</title>');
+    }catch(e){lastError=(e&&e.name==='AbortError')?'Zeitüberschreitung beim Laden':(e&&e.message)||String(e);}
     if(!html){
-      document.getElementById('boot-error').textContent =
-        'Die App-Dateien konnten nicht geladen werden. Bitte alle neun App-Dateien direkt ins Hauptverzeichnis hochladen.\nDetails: '+lastError;
-      document.getElementById('retry').hidden=false;
+      showError('Die App-Dateien konnten nicht geladen werden. Bitte prüfen, ob alle Dateien direkt im Hauptverzeichnis des Repositorys liegen (keine Unterordner).\nDetails: '+lastError);
       return;
     }
-    const ownAddon=new URL('addon.js?v=15-flat-1',window.location.href).href;
+    const ownAddon=new URL('addon.js?v='+APP_VERSION,window.location.href).href;
     const base='<base href="'+REMOTE+'">';
     const extraStyle=`<style>
-#dd-stop:disabled{display:none!important}
-#dd-addon .dd-dockmain button[hidden]{display:none!important}
-#dd-editor,#dd-crop-canvas{margin:0!important;border:0!important;image-rendering:auto!important}
-body.dd-has-studio,#dd-addon{height:var(--studio-height,100dvh)!important;max-height:var(--studio-height,100dvh)!important}
-#dd-addon .dd-layer{flex-wrap:wrap}#dd-addon .dd-layer label{flex:1 1 120px}
-#dd-addon .dd-viewzoom{min-height:0!important;overflow:hidden}#dd-addon #dd-viewzoom{flex:1 1 auto;min-height:20px!important}
+/* ===== Niimbot Druckstudio V18 – Layout für iPhone (Bluefy) und Laptop ===== */
+:root{color-scheme:light;--blue:#155bb0;--blue-d:#0b2444;--blue-l:#eaf3ff;--line:#d6e0ec;--muted:#5b6b80;--ink:#17233b;--bg:#eef2f8;--dock-h:74px;--danger:#b42318}
+html,body{height:100%;overflow:hidden!important;overscroll-behavior:none}
+body{margin:0!important;max-width:none!important;padding:0!important;background:var(--bg)!important;color:var(--ink)!important;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif!important;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+/* Original-Demo: Testdruck-Knöpfe, Überschrift und Testcanvas werden nicht gebraucht */
+body>h1,body>p,body>canvas#preview,label:has(#text),#preview,#print,#printreal,#print3copies,#print3,#print5,#print3dense,#print5dense{display:none!important}
+button{font:inherit;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 
-      :root{color-scheme:light}
-      html{scroll-behavior:smooth;overflow-x:hidden}
-      body{max-width:940px!important;margin:0 auto!important;padding:16px 14px 64px!important;
-        padding-left:max(14px,env(safe-area-inset-left))!important;
-        padding-right:max(14px,env(safe-area-inset-right))!important;
-        background:#f3f6fb!important;color:#17233b!important}
-      body>h1{font-size:clamp(1.5rem,6vw,2.2rem)!important;margin:12px 0 8px}
-      body>p{line-height:1.5;color:#475569}
-      button{border-radius:10px!important;min-height:44px!important;max-width:100%;background:#fff;border:1px solid #b6c4d7;color:#162b4a;font-weight:650;box-sizing:border-box}
-      button:active{filter:brightness(.95)}
-      input,select,textarea{box-sizing:border-box;min-height:44px!important;font-size:16px!important;border-radius:8px;border:1px solid #b6c4d7;background:#fff;color:#17233b}
-      #identify{background:#135caf!important;color:#fff!important;border-color:#135caf!important}
-      #model,#size{max-width:100%;min-width:180px;}
-      #preview,#print,#printreal,#print3copies,#print3,#print5,#print3dense,#print5dense{display:none!important}
-      body>h1,body>h1+p,label:has(#text){display:none!important}
-      #rollbox,#logbox{border-radius:12px!important;background:#fff;padding:12px!important;border:1px solid #dbe3ed!important}
-      #rollbox summary,#logbox summary{padding:8px 0;min-height:44px;align-content:center}
-      #status{font-size:.9rem;white-space:pre-wrap;word-break:break-word}
-      #niimbot-mobile-head{background:#0b2444;color:#fff;border-radius:16px;padding:16px 17px;margin:8px 0 20px;box-shadow:0 5px 14px #1127481a}
-      #niimbot-mobile-head h2{margin:0 0 8px;font-size:1.18rem}
-      #niimbot-mobile-head p{font-size:.88rem;line-height:1.45;color:#d5e5f7;margin:8px 0}
-      #niimbot-mobile-head nav{display:flex;gap:8px;flex-wrap:wrap;margin-top:13px}
-      #niimbot-mobile-head nav a{background:#fff;color:#0b2444;text-decoration:none;font-weight:700;border-radius:8px;padding:10px 13px;display:inline-block}
-      #niimbot-mobile-head a:focus-visible{outline:2px solid #8ed5ff}
-      #dd-addon{padding:17px;background:#fff;border:1px solid #dbe3ed;border-radius:16px;margin:20px 0}
-      #dd-addon *{box-sizing:border-box}
-      #dd-addon h2{font-size:1.24rem;margin:0 0 9px}
-      #dd-addon button.primary{background:#155bb0;color:#fff;border-color:#155bb0}
-      #dd-addon button:disabled{opacity:.48}
-      #dd-addon .dd-drop{border:2px dashed #88a7c9;border-radius:12px;padding:24px 14px;background:#f7fbff;text-align:center;cursor:pointer}
-      #dd-addon .dd-drop.drag{background:#e4f0ff;border-color:#155bb0}
-      #dd-addon .dd-muted{font-size:.85rem;color:#617187;line-height:1.45}
-      #dd-addon .dd-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin:12px 0}
-      #dd-addon .dd-row label{display:flex;flex:1;min-width:130px;flex-direction:column;gap:6px;margin:0;font-size:.85rem;font-weight:650}
-      #dd-addon .dd-row input,#dd-addon .dd-row select{width:100%}
-      #dd-addon .dd-queue{display:grid;gap:8px;margin:14px 0}
-      #dd-addon .dd-queueitem{display:grid;grid-template-columns:46px minmax(0,1fr) auto;gap:9px;align-items:center;border:1px solid #e2e8f0;border-radius:10px;padding:8px}
-      #dd-addon .dd-thumb{display:block;width:46px;height:46px;object-fit:contain;background:#f0f3f8;border-radius:6px}
-      #dd-addon .dd-title{font-size:.9rem;font-weight:700;overflow-wrap:anywhere}
-      #dd-addon .dd-inline{display:flex;gap:4px;flex-wrap:wrap}
-      #dd-addon .dd-inline button{padding:5px 9px;min-height:34px!important}
-      #dd-addon .dd-editorstage{display:flex;align-items:stretch;gap:12px;background:#f1f5fa;border-radius:11px;padding:10px;min-height:320px}
-      #dd-addon .dd-editorwrap{display:grid;place-items:center;flex:1;min-width:0;background:#f1f5fa;border-radius:11px;padding:4px;min-height:320px}
-      #dd-addon #dd-editor{display:block;width:100%;max-width:100%;height:500px;touch-action:none;background:#e9edf3;border-radius:10px;box-shadow:inset 0 0 0 1px #d9e2ef}
-      #dd-addon .dd-layer[data-locked="true"]{background:#edf1f6;border-color:#94a3b8}
-      #dd-addon .dd-layer .dd-lock-toggle{font-size:20px;min-height:40px!important;background:#f1f5fa;border:1px solid #cbd5e1}
-      #dd-addon .dd-layer[data-locked="true"] .dd-lock-toggle{background:#dbeafe;border-color:#60a5fa}
-      #dd-addon .dd-viewzoom{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:5px;border-radius:9px;background:#e8eef7;padding:8px 3px;flex:0 0 42px;width:42px;height:209px;align-self:flex-start}
-      #dd-addon .dd-viewzoom label{font-size:.66rem;font-weight:700;color:#244269;writing-mode:horizontal-tb;letter-spacing:0;transform:none}
-      #dd-addon #dd-viewzoom{writing-mode:vertical-lr;direction:rtl;width:22px;height:117px;min-height:0!important;max-height:117px!important;flex:0 0 117px;min-width:22px}
-      #dd-addon #dd-viewzoom-value{font-size:.73rem;color:#244269;font-weight:750;min-width:35px;text-align:center}
-      #dd-addon progress{width:100%;height:12px;accent-color:#155bb0}
-      #dd-addon #dd-state{font-size:.9rem;line-height:1.4;overflow-wrap:anywhere;white-space:pre-wrap}
-      #dd-addon .dd-warning{color:#914916;background:#fff8eb;padding:10px;border-radius:8px;font-size:.85rem}
-      #dd-addon .dd-controlgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-      #dd-addon .dd-controlgrid button{padding:8px 6px;min-height:38px!important;font-size:.92rem}
-      #dd-addon .dd-direction{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:220px}
-      #dd-addon .dd-direction .sp{visibility:hidden}
-      #dd-addon .dd-toolbar{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
-      #dd-addon .dd-toolbar button{padding:8px 10px;min-height:38px!important}
-      #dd-addon .dd-smallinput{max-width:120px}
-      #dd-addon .dd-panel{border:1px solid #dbe3ed;border-radius:12px;margin:14px 0;padding:12px;background:#f8faff}
-      #dd-addon .dd-panel h3{margin:0 0 10px;font-size:1.04rem}
-      #dd-addon .dd-check{display:flex;align-items:center;gap:6px;font-size:.89rem}
-      #dd-addon .dd-check input{min-height:18px!important;width:18px!important;flex:0 0 auto}
-      #dd-addon .dd-textlist{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
-      #dd-addon .dd-textlist button[aria-pressed="true"]{background:#d8eaff;color:#124e90;border-color:#1d6fb5}
-      #dd-addon #dd-textcontent{width:100%;min-height:70px;padding:8px;resize:vertical}
-      #dd-addon #dd-fontlist{font-size:.81rem;color:#4b5c72;line-height:1.5;word-break:break-word}
-      #dd-addon .dd-section-title{font-weight:700;font-size:.9rem;margin:10px 0 3px}
-      #dd-addon #dd-fontfile{max-width:100%;font-size:.9rem}
-      #dd-addon #dd-fontfile::file-selector-button{border:1px solid #94a3b8;border-radius:7px;background:#fff;padding:6px}
-      #dd-addon .dd-badge{font-size:.8rem;color:#51647d}
-      #dd-addon button.dd-activated{background:#dceeff;color:#155bb0;border:2px solid #155bb0}
-      #dd-addon .dd-rotationrow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
-      #dd-addon .dd-rotationrow input[type="range"]{flex:3;min-width:130px}
-      #dd-addon .dd-rotationrow input[type="number"]{flex:0 0 84px;max-width:94px}
-      #dd-addon .dd-rotationrow button{flex:0 0 auto}
-      #dd-addon .dd-no-image{color:#64748b}
-      #dd-addon .dd-imageadjusts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 12px}
-      #dd-addon .dd-imageadjusts label{min-width:0}
-      #dd-addon .dd-adjustitem{display:grid;grid-template-columns:minmax(0,1fr);gap:6px;border:1px solid #dde6f2;border-radius:11px;padding:10px;background:#fff;min-width:0}
-      #dd-addon .dd-adjustlabel{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:650;font-size:.87rem}
-      #dd-addon .dd-adjustslider{display:block;width:100%;min-width:0;min-height:32px!important;margin:0}
-      #dd-addon .dd-adjuststepper{display:grid;grid-template-columns:42px minmax(0,1fr) 42px;align-items:stretch;gap:8px;min-width:0}
-      #dd-addon .dd-adjuststepper button{margin:0!important;min-height:42px!important;padding:4px 2px!important;font-size:1.35rem;line-height:1}
-      #dd-addon .dd-adjuststepper input{margin:0!important;min-height:42px!important;min-width:0!important;width:100%;text-align:center;padding:5px 4px;font-variant-numeric:tabular-nums;font-size:16px!important}
-      #dd-addon .dd-adjuststepper button:disabled,#dd-addon .dd-adjuststepper input:disabled{opacity:.5}
-      #dd-addon .dd-rangevalue{font-variant-numeric:tabular-nums;color:#155bb0;font-weight:700;font-size:.84rem}
-      #dd-addon .dd-layerlist{display:grid;gap:6px;margin:8px 0}
-      #dd-addon .dd-layer{display:flex;gap:6px;align-items:center;border:1px solid #d1dbe8;border-radius:9px;background:#fff;padding:6px}
-      #dd-addon .dd-layer[data-selected="true"]{border-color:#155bb0;background:#eaf4ff}
-      #dd-addon .dd-layer label{flex:1;min-width:0;overflow-wrap:anywhere;font-size:.84rem}
-      #dd-addon .dd-layer button{min-height:35px!important;padding:5px 9px}
-      #dd-addon .dd-mini{min-width:0}
-      #dd-addon .dd-textfeatures{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:8px 0}
-      #dd-addon .dd-caption{font-size:.82rem;color:#475569}
-      #dd-addon input[type=range]{accent-color:#155bb0}
-      #dd-addon .dd-textsize-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-      #dd-addon .dd-flow-buttons{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
-      #dd-addon .dd-flow-buttons button{padding:8px 10px;min-height:38px!important}
-      #dd-addon .dd-subpanel{border:1px solid #dbe3ed;border-radius:10px;background:#fff;padding:10px;margin-top:8px}
-      #dd-addon .dd-subpanel[hidden]{display:none!important}
-      @media(max-width:480px){#dd-addon .dd-imageadjusts{grid-template-columns:1fr}#dd-addon .dd-textsize-grid{grid-template-columns:1fr 1fr}#dd-addon .dd-editorstage{gap:7px;padding:7px}#dd-addon .dd-viewzoom{flex-basis:38px;width:38px;padding:7px 2px}#dd-addon #dd-viewzoom{min-height:0!important}}
+#dd-addon{box-sizing:border-box;display:flex;flex-direction:column;gap:6px;height:var(--studio-height,100dvh);max-width:1680px;margin:0 auto;overflow:hidden;
+  padding:max(6px,env(safe-area-inset-top)) max(6px,env(safe-area-inset-right)) calc(var(--dock-h) + 6px) max(6px,env(safe-area-inset-left))}
+#dd-addon *,#dd-crop-dialog *{box-sizing:border-box}
+#dd-addon button,#dd-crop-dialog button{min-height:40px;padding:8px 12px;margin:0;border-radius:10px;border:1px solid #b6c4d7;background:#fff;color:#162b4a;font-weight:650;font-size:.88rem;line-height:1.15;cursor:pointer;max-width:100%;white-space:normal}
+#dd-addon button:active:not(:disabled){filter:brightness(.94)}
+#dd-addon button:disabled{opacity:.42;cursor:not-allowed}
+#dd-addon button:focus-visible,#dd-addon input:focus-visible,#dd-addon select:focus-visible,#dd-addon textarea:focus-visible{outline:2px solid #2f80e0;outline-offset:1px}
+#dd-addon button.primary{background:var(--blue);color:#fff;border-color:var(--blue)}
+#dd-addon button.dd-activated,#dd-addon button[aria-pressed="true"]{background:#dceeff;color:#124e90;border:2px solid var(--blue)}
+#dd-addon input,#dd-addon select,#dd-addon textarea,#dd-dockdrawer input,#dd-dockdrawer select,#dd-dockdrawer textarea{min-height:40px;font-size:16px;border-radius:8px;border:1px solid #b6c4d7;background:#fff;color:var(--ink);padding:6px 8px;font-family:inherit;max-width:100%}
+#dd-addon input[type=range]{padding:0;border:0;background:transparent;min-height:30px;accent-color:var(--blue)}
+#dd-addon input[type=checkbox]{min-height:0;width:20px;height:20px;padding:0;flex:0 0 auto;accent-color:var(--blue)}
+#dd-addon input[type=file]{font-size:.85rem;border:0;padding:0;min-height:0}
+#dd-addon h3{font-size:.95rem;margin:4px 0 8px}
 
-      @media(max-width:480px){
-        button{margin:3px 2px 3px 0!important}
-        #dd-addon .dd-queueitem{grid-template-columns:40px minmax(0,1fr)}
-        #dd-addon .dd-inline{grid-column:2}
-        #dd-addon .dd-thumb{width:40px;height:40px}
-        #niimbot-mobile-head nav a{flex:1;text-align:center}
-        #dd-addon #dd-editor{height:420px}
-      }
+/* ---------- Druckerleiste ---------- */
+#dd-addon .dd-printerbar{flex:0 0 auto;display:grid;grid-template-columns:minmax(0,1fr);gap:5px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:7px 9px;box-shadow:0 2px 8px #0a254012}
+#dd-addon .dd-printerbar-head{display:flex;align-items:center;gap:8px;min-width:0}
+#dd-addon .dd-brand{font-weight:800;color:#12335f;font-size:.93rem;white-space:nowrap}
+#dd-addon .dd-brand small{font-weight:600;color:#6a83a3;font-size:.72rem;margin-left:3px}
+#dd-addon .dd-printer-summary{flex:1;min-width:0;display:flex;align-items:center;gap:6px;font-size:.76rem;color:var(--muted);white-space:nowrap;overflow:hidden}
+#dd-addon .dd-printer-summary span:last-child{overflow:hidden;text-overflow:ellipsis}
+#dd-addon .dd-conn{flex:0 0 auto;display:inline-flex;align-items:center;gap:4px;font-weight:700;border-radius:99px;padding:2px 8px;background:#fdecec;color:#9a1c1c}
+#dd-addon .dd-conn:before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+#dd-addon .dd-conn.on{background:#e3f6e9;color:#17703a}
+#dd-addon #dd-printer-toggle{min-height:32px;padding:3px 9px;font-size:.78rem;flex:0 0 auto}
+#dd-addon #dd-quick-connect{min-height:32px;padding:3px 10px;font-size:.78rem;flex:0 0 auto;background:var(--blue);color:#fff;border-color:var(--blue)}
+#dd-addon .dd-printerbar:not(.collapsed) #dd-quick-connect,#dd-addon .dd-printerbar.connected #dd-quick-connect{display:none}
+@media (max-width:899px){#dd-addon .dd-printerbar.collapsed .dd-brand{font-size:0}#dd-addon .dd-printerbar.collapsed .dd-brand:before{content:"🏷️";font-size:1rem}#dd-addon .dd-printerbar.collapsed .dd-brand small{display:none}}
+#dd-addon .dd-printer-controls{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1.3fr) minmax(0,.75fr);gap:6px}
+#dd-addon .dd-printer-controls>label{display:flex;flex-direction:column;gap:2px;margin:0;font-size:.7rem;color:var(--muted);min-width:0}
+#dd-addon .dd-printer-controls select{width:100%;min-width:0;height:36px;min-height:36px;padding:3px 6px}
+#dd-addon .dd-printer-actions{display:flex;gap:6px;align-items:center}
+#dd-addon .dd-printer-actions #identify{flex:1 1 auto;background:var(--blue);color:#fff;border-color:var(--blue);min-height:38px;padding:6px 10px}
+#dd-addon .dd-printer-actions #disconnect{min-height:38px;padding:6px 10px}
+#dd-addon .dd-printer-info:has(#status:empty){display:none}
+#dd-addon .dd-printer-info{font-size:.74rem;color:var(--muted);min-width:0}
+#dd-addon #status{margin:0!important;font-family:inherit!important;white-space:nowrap!important;overflow:hidden;text-overflow:ellipsis;min-height:1.1em}
+#dd-addon #status .warn{color:var(--danger);white-space:normal}
+#dd-addon #status:has(.warn){white-space:normal!important}
+#dd-addon .dd-printerbar.collapsed .dd-printer-controls,#dd-addon .dd-printerbar.collapsed .dd-printer-actions,#dd-addon .dd-printerbar.collapsed .dd-printer-info,#dd-addon .dd-printerbar.collapsed #dd-blehint{display:none}
+#dd-addon .dd-warning{color:#914916;background:#fff8eb;padding:9px;border-radius:8px;font-size:.82rem;line-height:1.4}
 
-      #dd-addon .dd-layer-hint{font-size:.83rem;color:#526780;line-height:1.45;margin:7px 0}
-      #dd-addon .dd-layer-files{display:flex;flex-wrap:wrap;align-items:center;gap:9px;margin:9px 0}
-      #dd-addon .dd-layer-files button{background:#eaf3ff;border-color:#91baf0;color:#144c8c}
-      #dd-addon .dd-layerfiles{display:grid;gap:8px;margin-top:12px}
-      #dd-addon .dd-activeimage{font-size:.86rem;background:#e6f2ff;padding:8px;border-radius:8px;overflow-wrap:anywhere}
-      #dd-addon .dd-viewzoom button{font-size:17px;min-height:23px!important;width:28px;padding:0!important;border:0;background:transparent;color:#174f8a;margin:0!important}
-      #dd-addon .dd-historybar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid #dbe3ed;background:#f7fbff;border-radius:10px;padding:9px 10px;margin:10px 0}
-      #dd-addon .dd-historybar button{min-height:38px!important;padding:6px 10px!important;border:1px solid #95a9c2;border-radius:8px;background:white;color:#183c68;font-size:.88rem}
-      #dd-addon .dd-historybar button:disabled{opacity:.38}
-      #dd-addon .dd-historybar span{color:#52667d;font-size:.74rem;flex:1;min-width:110px}
-      #dd-addon .dd-layer[data-locked="true"]{background:#f0f3f8;border-color:#bec9d9}
-      #dd-addon .dd-layer .dd-lock-toggle{min-width:37px!important;padding:5px!important;background:#e6edf7;color:#183b65;border-color:#aac1df}
-      #dd-crop-dialog{border:0;border-radius:16px;padding:0;width:min(96vw,650px);max-height:94dvh;overflow:auto;background:#fff;color:#17243d;box-shadow:0 15px 65px #1620337a}
-      #dd-crop-dialog::backdrop{background:rgba(21,32,50,.72)}
-      #dd-crop-dialog .crop-body{padding:16px}
-      #dd-crop-dialog h3{font-size:1.12rem;margin:0 0 7px}
-      #dd-crop-dialog .crop-presets{display:flex;gap:5px;flex-wrap:wrap;margin:9px 0}
-      #dd-crop-dialog .crop-presets button{min-height:38px!important;padding:6px 10px!important;border:1px solid #91a8c4;background:#f4f8fc;color:#193e69;border-radius:7px}
-      #dd-crop-dialog .crop-presets button[aria-pressed="true"]{background:#1659a9!important;color:#fff!important}
-      #dd-crop-dialog #dd-crop-canvas{display:block;width:100%;height:340px;touch-action:none;border-radius:9px;background:#d8dee7}
-      #dd-crop-dialog .crop-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:13px}
-      #dd-crop-dialog button{font:inherit;min-height:42px;border-radius:9px;padding:8px 13px;border:1px solid #91a8c4;background:#fff;color:#1a3f69}
-      #dd-crop-dialog #dd-crop-save{background:#1659a9;border-color:#1659a9;color:#fff}
-      @media(max-width:480px){#dd-crop-dialog #dd-crop-canvas{height:285px}#dd-addon .dd-layer button{padding:5px 7px!important}}
+/* ---------- Arbeitsbereich ---------- */
+#dd-addon .dd-workspace{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;gap:6px}
+#dd-addon .dd-preview-area{display:flex;flex-direction:column;flex:1 1 auto;min-height:140px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:5px;overflow:hidden}
+#dd-addon .dd-preview-head{display:flex;align-items:center;gap:5px;flex:0 0 auto;min-height:34px}
+#dd-addon #dd-preview-title{flex:1;min-width:0;margin:0 0 0 3px;font-size:.78rem;font-weight:700;color:#1b3b63;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#dd-addon .dd-preview-head button{min-height:32px;padding:3px 8px;font-size:.78rem;white-space:nowrap;flex:0 0 auto}
+#dd-addon .dd-historybar{display:flex;gap:4px;align-items:center;margin:0;padding:0;border:0;background:none}
+#dd-addon .dd-historybar button{min-width:38px}
+#dd-addon #dd-history-status{display:none}
+#dd-addon .dd-editorstage{position:relative;flex:1 1 auto;min-height:0;margin-top:4px;display:flex}
+#dd-addon .dd-editorwrap{position:relative;flex:1 1 auto;min-width:0;min-height:0;background:#dfe5ee;border-radius:10px;overflow:hidden}
+#dd-addon #dd-editor{position:absolute;inset:0;display:block;width:100%!important;height:100%!important;touch-action:none;outline:none;border:0;margin:0;max-width:none}
+#dd-addon #dd-editor:focus-visible{box-shadow:inset 0 0 0 2px #2f80e0}
+#dd-addon .dd-viewzoom{position:absolute;right:8px;bottom:8px;z-index:2;display:flex;align-items:center;gap:2px;background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:99px;padding:2px;box-shadow:0 2px 10px #12305020}
+#dd-addon .dd-viewzoom label,#dd-addon #dd-viewzoom{display:none}
+#dd-addon .dd-viewzoom button{min-height:32px;min-width:32px;padding:0 8px;border:0;border-radius:99px;background:transparent;color:#174f8a;font-size:1.05rem;line-height:1}
+#dd-addon #dd-viewzoom-value{min-width:46px;font-size:.78rem;font-weight:750;color:#244269;text-align:center;cursor:pointer;user-select:none}
 
-#model,#size{min-width:0!important}
-body.dd-has-studio{height:100dvh!important;max-height:100dvh!important;overflow:hidden!important}
-/* V13: mobile editor with persistent preview, resizable tool drawer, fixed print footer */
-html,body{overflow-x:hidden!important}
-body{max-width:1080px!important;padding:4px 8px!important;background:#edf2f9!important}
-#niimbot-mobile-head{display:none!important}
-#dd-addon{box-sizing:border-box!important;height:100svh;height:100dvh;display:flex;flex-direction:column;gap:0;overflow:hidden;margin:0!important;padding:5px 5px calc(78px + env(safe-area-inset-bottom))!important;background:transparent!important;border:0!important;box-shadow:none!important;border-radius:0!important}
-#dd-addon>.dd-printerbar{flex:0 0 auto;background:#fff;border:1px solid #dce4ef;border-radius:13px;padding:8px 9px;position:relative;z-index:3;box-shadow:0 2px 8px #0a254015;margin-bottom:5px}
-#dd-addon .dd-printerbar-head{display:flex;justify-content:space-between;gap:8px;align-items:center;margin-bottom:6px}
-#dd-addon .dd-printerbar-head strong{font-size:.96rem;letter-spacing:-.01em;color:#12335f}
-#dd-addon .dd-printer-controls{display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end}
-#dd-addon .dd-printer-controls>label{display:flex;flex:1 1 125px;flex-direction:column;gap:3px;font-size:.72rem;color:#52647a;min-width:0;white-space:normal}
-#dd-addon .dd-printer-controls select{width:100%;min-width:0;min-height:35px!important;height:35px;padding:5px 22px 5px 6px;font-size:16px!important}
-#dd-addon .dd-printer-actions{display:flex;gap:5px;align-items:center;flex-wrap:wrap;margin-top:6px}
-#dd-addon .dd-printer-actions button{min-height:34px!important;margin:0!important;padding:6px 10px!important;font-size:.78rem}
-#dd-addon .dd-printer-actions #identify{flex:1 1 140px}
-#dd-addon .dd-printer-actions #readstatus{display:none!important}
-#dd-addon .dd-printer-info{font-size:.68rem;max-height:24px;overflow:auto;color:#63738b}
-#dd-addon .dd-workspace{display:flex;flex-direction:column;flex:1 1 auto;min-height:0;overflow:hidden;gap:5px}
-#dd-addon .dd-preview-area{display:flex;flex-direction:column;flex:1 1 auto;min-height:140px;overflow:hidden;background:white;border:1px solid #d8e2f0;border-radius:15px;padding:7px}
-#dd-addon .dd-preview-head{display:flex;justify-content:space-between;align-items:center;gap:7px;min-height:37px;flex:0 0 auto}
-#dd-addon .dd-preview-head .dd-preview-name{font-size:.8rem;font-weight:750;color:#1b3b63;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1}
-#dd-addon .dd-preview-area .dd-historybar{margin:0;display:flex;align-items:center;gap:4px;padding:2px;border:0;background:none;flex-wrap:nowrap}
-#dd-addon .dd-preview-area .dd-historybar button{min-height:34px!important;padding:4px 7px!important;white-space:nowrap;font-size:.84rem}
-#dd-addon .dd-preview-area #dd-history-status{display:none}
-#dd-addon .dd-preview-area #dd-preview-title{font-size:.71rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:4px 0 3px}
-#dd-addon .dd-preview-area .dd-editorstage{flex:1 1 auto;min-height:0!important;height:0!important;overflow:hidden;margin:0;padding:6px;align-items:stretch}
-#dd-addon .dd-preview-area .dd-editorwrap{flex:1 1 auto;min-height:0!important;height:100%;padding:1px}
-#dd-addon .dd-preview-area #dd-editor{height:100%!important;width:100%!important;max-width:100%;min-height:0!important;display:block}
-#dd-addon .dd-preview-area .dd-viewzoom{height:195px;max-height:95%;align-self:flex-start;min-height:0!important;flex:0 0 38px;width:38px}
-#dd-addon .dd-preview-area #dd-viewzoom{height:100px!important;min-height:0!important;max-height:100px!important;flex:0 0 100px}
-#dd-addon .dd-toolshell{display:flex;flex-direction:column;flex:0 0 255px;height:255px;min-height:158px;max-height:70%;overflow:hidden;background:white;border:1px solid #cedceb;border-radius:16px 16px 9px 9px;box-shadow:0 -4px 24px #1432581c;position:relative}
-#dd-addon .dd-gripbar{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:36px;flex:0 0 36px;padding:3px 8px;background:#f8fbff;border-bottom:1px solid #e1eaf5;touch-action:none;cursor:ns-resize;user-select:none}
-#dd-addon .dd-draghandle{height:6px;width:42px;background:#b9cce1;border-radius:10px;margin:auto}
-#dd-addon .dd-toolsizes{display:flex;gap:4px}
-#dd-addon .dd-toolsizes button{min-height:28px!important;margin:0!important;padding:3px 7px!important;font-size:.72rem;color:#214166}
-#dd-addon .dd-tabstrip{display:flex;align-items:stretch;gap:1px;min-height:46px;flex:0 0 46px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;background:#fff;border-bottom:1px solid #d9e3f0;overscroll-behavior-x:contain}
+/* ---------- Werkzeugbereich ---------- */
+#dd-addon .dd-toolshell{display:flex;flex-direction:column;flex:0 0 auto;height:50%;min-height:150px;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 -3px 18px #1432581a}
+#dd-addon .dd-gripbar{display:flex;align-items:center;gap:8px;flex:0 0 30px;min-height:30px;padding:2px 8px;background:#f6f9fd;border-bottom:1px solid #e3eaf3;touch-action:none;cursor:ns-resize;user-select:none;-webkit-user-select:none}
+#dd-addon .dd-draghandle{height:5px;width:44px;background:#b9cce1;border-radius:9px;margin:auto}
+#dd-addon .dd-toolsizes{display:flex;gap:4px;position:absolute;right:8px}
+#dd-addon .dd-gripbar{position:relative}
+#dd-addon .dd-toolsizes button{min-height:26px;padding:1px 9px;font-size:.72rem;border-radius:7px}
+#dd-addon .dd-tabstrip{display:flex;flex:0 0 auto;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;border-bottom:1px solid var(--line);overscroll-behavior-x:contain;
+  background:linear-gradient(90deg,#fff 40%,rgba(255,255,255,0)) left/26px 100% no-repeat local,linear-gradient(270deg,#fff 40%,rgba(255,255,255,0)) right/26px 100% no-repeat local,
+  linear-gradient(90deg,rgba(18,51,95,.20),rgba(18,51,95,0)) left/12px 100% no-repeat scroll,linear-gradient(270deg,rgba(18,51,95,.20),rgba(18,51,95,0)) right/12px 100% no-repeat scroll;background-color:#fff}
 #dd-addon .dd-tabstrip::-webkit-scrollbar{display:none}
-#dd-addon .dd-tabstrip button{flex:0 0 auto;white-space:nowrap;margin:0!important;min-height:43px!important;padding:7px 13px!important;border:none!important;border-radius:0!important;background:transparent!important;color:#536579!important;font-size:.88rem;position:relative}
-#dd-addon .dd-tabstrip button[aria-selected="true"]{color:#155bb0!important;font-weight:750;background:#eef5ff!important}
-#dd-addon .dd-tabstrip button[aria-selected="true"]:after{content:"";height:3px;position:absolute;left:9px;right:9px;bottom:0;background:#1766bb;border-radius:3px}
-#dd-addon .dd-tabcontent{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;min-height:0;flex:1 1 auto;padding:11px 12px 28px;touch-action:pan-y;-webkit-overflow-scrolling:touch}
-#dd-addon .dd-tabcontent[hidden]{display:none!important}
-#dd-addon .dd-tabcontent .dd-panel{margin:4px 0 12px;padding:8px;border:0;background:transparent}
-#dd-addon .dd-tabcontent .dd-row{margin:7px 0}
-#dd-addon .dd-tabcontent .dd-row label{min-width:110px}
-#dd-addon .dd-tabcontent .dd-muted{font-size:.78rem}
-#dd-addon .dd-tabcontent .dd-toolbar{margin:7px 0}
-#dd-addon .dd-tabcontent .dd-toolbar button{margin:1px!important}
-#dd-addon .dd-tabcontent .dd-section-title{margin:8px 0 4px}
-#dd-addon .dd-tabcontent .dd-adjustitem{padding:7px}
-#dd-addon .dd-tabcontent h3{font-size:.94rem;margin:2px 0 7px}
-#dd-addon .dd-tab-lead{font-size:.85rem;color:#304b68;font-weight:750;margin:0 0 8px}
-#dd-addon .dd-globaldock{position:fixed;left:max(5px,env(safe-area-inset-left));right:max(5px,env(safe-area-inset-right));bottom:0;bottom:env(safe-area-inset-bottom);z-index:999;background:#fff;border:1px solid #cbd9e9;border-radius:14px 14px 0 0;box-shadow:0 -6px 28px #182e4b22;max-width:1080px;margin:auto;padding:7px 9px 6px;max-height:74dvh;display:flex;flex-direction:column;overflow:hidden}
-#dd-addon .dd-dockmain{display:flex;align-items:center;gap:6px}
-#dd-addon .dd-dockmain button{min-height:42px!important;margin:0!important;font-size:.85rem;padding:7px 9px!important}
-#dd-addon .dd-dockmain .dd-dockprint{flex:1 1 60%;background:#125eb7!important;color:white!important;border:1px solid #125eb7!important}
-#dd-addon .dd-dockmain .dd-dockrolls{flex:0 0 auto}
-#dd-addon .dd-dockmain .dd-dockjobs{flex:0 0 auto}
-#dd-addon .dd-dockmeta{display:flex;align-items:center;gap:5px;font-size:.7rem;color:#64748b;white-space:nowrap;overflow:hidden;margin-top:5px}
-#dd-addon .dd-dockmeta #dd-count{white-space:nowrap;flex:0 0 auto;font-size:.72rem}
-#dd-addon .dd-dockmeta #dd-state{font-size:.7rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0}
-#dd-addon .dd-dockmeta progress{width:60px;height:7px;flex:0 0 60px}
-#dd-addon .dd-dockdrawer{overflow-y:auto;overscroll-behavior:contain;padding-top:9px;margin-top:7px;border-top:1px solid #dee7f0;flex:1 1 auto}
-#dd-addon .dd-dockdrawer[hidden]{display:none!important}
-#dd-addon .dd-dockdrawer #rollbox,#dd-addon .dd-dockdrawer #logbox{margin:6px 0!important;padding:9px!important}
-#dd-addon .dd-dockdrawer .dd-warning{font-size:.8rem}
-#dd-addon .dd-dockdrawer .dd-row{margin:7px 0}
-#dd-addon .dd-dockdrawer #dd-stop{min-height:37px!important}
-#dd-addon .dd-docksettings #readstatus{display:inline-flex!important;align-items:center;min-height:37px!important}
-#dd-addon .dd-dockdrawer #dd-copies{max-width:90px}
-#dd-addon .dd-dockdrawer #dd-drop{max-width:100%}
-#dd-addon .dd-mobile-action{background:#eaf3ff;color:#174a83;border:1px solid #b5d0ef}
-@media(max-width:530px){
-  body{padding:0!important}
-  #dd-addon{padding:3px 4px calc(74px + env(safe-area-inset-bottom))!important;height:100dvh}
-  #dd-addon>.dd-printerbar{padding:6px 7px;margin-bottom:3px;border-radius:0 0 11px 11px}
-  #dd-addon .dd-printerbar-head{margin-bottom:4px}
-  #dd-addon .dd-printerbar-head strong{font-size:.85rem}
-  #dd-addon .dd-printer-controls{gap:4px}
-  #dd-addon .dd-printer-controls>label{flex:1 1 28%;font-size:.66rem}
-  #dd-addon .dd-printer-actions{margin-top:4px}
-  #dd-addon .dd-printer-actions button{min-height:31px!important;font-size:.73rem;padding:5px!important}
-  #dd-addon .dd-preview-area{padding:5px;min-height:125px}
-  #dd-addon .dd-preview-area .dd-historybar button{font-size:.76rem;padding:4px 5px!important}
-  #dd-addon .dd-preview-area .dd-editorstage{padding:3px}
-  #dd-addon .dd-preview-area .dd-viewzoom{width:32px;flex-basis:32px;padding:4px 1px}
-  #dd-addon .dd-preview-area .dd-viewzoom label{font-size:.61rem}
-  #dd-addon .dd-toolshell{min-height:155px}
-  #dd-addon .dd-tabcontent{padding:8px 10px 24px}
-  #dd-addon .dd-tabstrip button{padding:7px 12px!important}
-  #dd-addon .dd-tabcontent .dd-imageadjusts{grid-template-columns:1fr}
-  #dd-addon .dd-dockmain button{font-size:.79rem}
-}
+#dd-addon .dd-tabstrip button{flex:0 0 auto;white-space:nowrap;min-height:44px;padding:8px 12px;border:0!important;border-radius:0!important;background:transparent!important;color:#536579!important;font-size:.86rem;position:relative}
+#dd-addon .dd-tabstrip button[aria-selected="true"]{color:var(--blue)!important;font-weight:750;background:#eef5ff!important}
+#dd-addon .dd-tabstrip button[aria-selected="true"]:after{content:"";position:absolute;left:9px;right:9px;bottom:0;height:3px;border-radius:3px;background:#1766bb}
+#dd-addon .dd-tabcontent{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;padding:10px 12px 26px}
+#dd-addon .dd-tab-page[hidden]{display:none!important}
+#dd-addon .dd-tab-lead{font-size:.86rem;color:#304b68;font-weight:750;margin:0 0 8px}
 
-#dd-addon .dd-preview-head #dd-preview-overflow-toggle{min-height:30px!important;padding:4px 6px!important;white-space:nowrap;font-size:.70rem;flex:0 0 auto;background:#eef5ff;color:#174a83}
-#dd-addon .dd-preview-head .dd-historybar{flex:0 0 auto}
-#dd-addon .dd-preview-head .dd-historybar button{padding:4px 6px!important}
-#dd-addon .dd-dockmain .dd-docksave{flex:0 0 auto;min-height:42px!important;background:#eaf3ff!important;color:#144d8b!important;border-color:#b5d0ef!important}
-#dd-addon .dd-dockmain .dd-dockprint{flex:1 1 auto}
-#dd-addon .dd-template-gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:10px;margin:12px 0}
-#dd-addon .dd-template-card{border:1px solid #d9e3ef;border-radius:12px;padding:10px;background:#fff;min-width:0}
+/* ---------- Bausteine ---------- */
+#dd-addon .dd-muted{font-size:.8rem;color:#5f6f85;line-height:1.45}
+#dd-addon .dd-caption{font-size:.8rem;color:#475569;line-height:1.4}
+#dd-addon .dd-row{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin:8px 0}
+#dd-addon .dd-row>label{display:flex;flex:1 1 140px;flex-direction:column;gap:4px;min-width:0;margin:0;font-size:.8rem;font-weight:650}
+#dd-addon .dd-row input:not([type=checkbox]),#dd-addon .dd-row select{width:100%}
+#dd-addon .dd-row>label.dd-check{flex-direction:row;align-items:center;font-weight:600}
+#dd-addon .dd-check{display:flex;align-items:center;gap:8px;font-size:.86rem;margin:6px 0}
+#dd-addon .dd-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0}
+#dd-addon .dd-toolbar button{min-height:38px;padding:6px 10px}
+#dd-addon .dd-panel{margin:4px 0 12px;padding:0;border:0;background:transparent}
+#dd-addon .dd-section-title{font-weight:700;font-size:.84rem;margin:10px 0 4px;display:block}
+#dd-addon .dd-mobile-action{background:var(--blue-l);color:#174a83;border-color:#b5d0ef}
+#dd-addon .dd-drop{border:2px dashed #88a7c9;border-radius:12px;padding:14px 12px;background:#f7fbff;text-align:center;cursor:pointer}
+#dd-addon .dd-drop.drag{background:#e4f0ff;border-color:var(--blue)}
+#dd-addon .dd-drop strong{display:block;margin-bottom:4px}
+#dd-addon .dd-drop .primary{margin-top:8px}
+#dd-addon .dd-queue{display:grid;gap:6px;margin:10px 0}
+#dd-addon .dd-queuebar{align-items:flex-end}
+#dd-addon .dd-queuebar>label{flex:0 1 150px}
+#dd-addon .dd-queuebar>button{flex:0 0 auto;margin-left:auto}
+#dd-addon .dd-queueitem{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid #e2e8f0;border-radius:10px;padding:6px}
+#dd-addon .dd-queueitem.selected{border-color:var(--blue);background:#f2f8ff}
+#dd-addon .dd-thumb{width:40px;height:40px;border-radius:6px;background:#f0f3f8;display:grid;place-items:center;font-size:.62rem;font-weight:750;color:#64748b;overflow:hidden}
+#dd-addon .dd-thumb img{width:100%;height:100%;object-fit:contain;background:#fff}
+#dd-addon .dd-thumb img:not([src]){display:none}
+#dd-addon .dd-thumb:has(img:not([src]))::before{content:attr(data-kind)}
+#dd-addon .dd-queueitem{cursor:pointer}
+#dd-addon .dd-title{font-size:.86rem;font-weight:700;overflow-wrap:anywhere}
+#dd-addon .dd-inline{display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+#dd-addon .dd-inline button{min-height:36px;min-width:36px;padding:4px 8px}
+#dd-addon .dd-controlgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+#dd-addon .dd-controlgrid button{padding:6px 4px;font-size:.84rem}
+#dd-addon .dd-direction{display:grid;grid-template-columns:repeat(3,44px);gap:6px}
+#dd-addon .dd-direction .sp{visibility:hidden}
+#dd-addon .dd-rotationrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+#dd-addon .dd-rotationrow>label{flex:1 0 100%;font-size:.82rem;font-weight:650}
+#dd-addon .dd-rotationrow input[type=range]{flex:1 1 150px;min-width:120px}
+#dd-addon .dd-rotationrow input[type=number]{flex:0 0 80px;width:80px}
+#dd-addon .dd-badge{font-size:.8rem;color:#51647d}
+#dd-addon .dd-imageadjusts{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
+#dd-addon .dd-adjustitem{display:grid;gap:5px;border:1px solid #dde6f2;border-radius:11px;padding:8px;background:#fff;min-width:0}
+#dd-addon .dd-adjustitem.dd-off{opacity:.5}
+#dd-addon .dd-adjustlabel{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:650;font-size:.84rem}
+#dd-addon .dd-adjustslider{width:100%}
+#dd-addon .dd-adjuststepper{display:grid;grid-template-columns:42px minmax(0,1fr) 42px;gap:6px}
+#dd-addon .dd-adjuststepper button{padding:2px;font-size:1.25rem}
+#dd-addon .dd-adjuststepper input{width:100%;text-align:center;font-variant-numeric:tabular-nums}
+#dd-addon .dd-rangevalue{font-variant-numeric:tabular-nums;color:var(--blue);font-weight:700;font-size:.82rem}
+#dd-addon .dd-textlist{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+#dd-addon #dd-textcontent{width:100%;min-height:70px;resize:vertical}
+#dd-addon .dd-textsize-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#dd-addon .dd-textsize-grid label{display:flex;flex-direction:column;gap:4px;font-size:.8rem;font-weight:650}
+#dd-addon .dd-flow-buttons{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
+#dd-addon .dd-subpanel{border:1px solid var(--line);border-radius:10px;background:#fff;padding:10px;margin-top:8px}
+#dd-addon .dd-subpanel[hidden]{display:none!important}
+#dd-addon .dd-layerlist{display:grid;gap:6px;margin:8px 0}
+#dd-addon .dd-layer{display:flex;flex-wrap:wrap;align-items:center;gap:5px;border:1px solid #d1dbe8;border-radius:10px;background:#fff;padding:6px}
+#dd-addon .dd-layer[data-selected="true"]{border-color:var(--blue);background:#eaf4ff}
+#dd-addon .dd-layer[data-locked="true"]{background:#f0f3f8;border-color:#bec9d9}
+#dd-addon .dd-layer label{flex:1 1 100%;min-width:0;font-size:.84rem;font-weight:650;overflow-wrap:anywhere}
+#dd-addon .dd-layer button{min-height:36px;padding:4px 9px;font-size:.82rem}
+#dd-addon .dd-layer .dd-lock-toggle{min-width:40px;font-size:1rem;padding:4px}
+#dd-addon .dd-layer[data-locked="true"] .dd-lock-toggle{background:#dbeafe;border-color:#60a5fa}
+#dd-addon .dd-layer-files{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+#dd-addon .dd-activeimage{font-size:.84rem;background:#e6f2ff;padding:8px;border-radius:8px;overflow-wrap:anywhere;margin-bottom:6px}
+#dd-addon .dd-keyboard-hint{font-size:.78rem;padding:9px;border-radius:9px;background:#eef5fc;color:#285175}
+#dd-addon #dd-label-rotate-mode{width:100%}
+#dd-addon .dd-rotate-mode-label{display:block;font-size:.8rem;font-weight:700;margin:6px 0 4px}
+#dd-addon #dd-fontlist{font-size:.82rem;color:#4b5c72}
+#dd-addon details.dd-fontbox{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin:14px 0 4px;background:#fbfdff}
+#dd-addon details.dd-fontbox summary{font-weight:700;cursor:pointer;min-height:32px;display:flex;align-items:center}
+#dd-addon .dd-template-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr));gap:8px;margin:10px 0}
+#dd-addon .dd-template-card{border:1px solid #d9e3ef;border-radius:12px;padding:9px;background:#fff;min-width:0}
 #dd-addon .dd-template-cardmain{display:flex;gap:9px;align-items:center;min-width:0}
-#dd-addon .dd-template-cardmain img{display:block;width:94px;height:76px;object-fit:contain;border:1px solid #e2e8f0;background:#f7f9fc;border-radius:7px}
-#dd-addon .dd-template-summary{flex:1;min-width:0;word-break:break-word}
-#dd-addon .dd-template-summary strong{font-size:.85rem;display:block}
-#dd-addon .dd-template-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:9px}
-#dd-addon .dd-template-actions button{min-height:34px!important;font-size:.72rem;padding:5px 8px!important}
-#dd-addon #dd-template-current{font-size:.78rem}
+#dd-addon .dd-template-cardmain img{width:88px;height:70px;object-fit:contain;border:1px solid #e2e8f0;background:#f7f9fc;border-radius:7px;flex:0 0 auto}
+#dd-addon .dd-template-summary{flex:1;min-width:0;overflow-wrap:anywhere}
+#dd-addon .dd-template-summary strong{display:block;font-size:.86rem}
+#dd-addon .dd-template-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+#dd-addon .dd-template-actions button{min-height:34px;padding:4px 8px;font-size:.76rem}
 #dd-addon #dd-template-search{width:100%}
-@media(max-width:400px){#dd-addon .dd-preview-head .dd-preview-name{display:none}#dd-addon .dd-preview-head{gap:2px}#dd-addon .dd-preview-head #dd-preview-overflow-toggle{font-size:.65rem}#dd-addon .dd-dockmain{gap:4px}#dd-addon .dd-dockmain button{padding:5px!important;font-size:.70rem}}
-@media(min-width:720px){#dd-addon .dd-tabcontent .dd-imageadjusts{grid-template-columns:repeat(2,minmax(0,1fr))}}
-    #dd-addon .dd-printer-controls select{font-size:16px!important}
-body.dd-has-studio,#dd-addon{height:var(--studio-height,100dvh)!important;max-height:var(--studio-height,100dvh)!important}
+
+/* ---------- Untere Leiste ---------- */
+#dd-addon .dd-globaldock{position:fixed;left:0;right:0;bottom:0;z-index:50;max-width:1680px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;max-height:82dvh;background:#fff;border:1px solid #cbd9e9;border-bottom:0;border-radius:14px 14px 0 0;box-shadow:0 -6px 24px #182e4b22;
+  padding:7px max(9px,env(safe-area-inset-right)) calc(5px + env(safe-area-inset-bottom)) max(9px,env(safe-area-inset-left))}
+#dd-addon .dd-dockmain{display:flex;align-items:center;gap:6px}
+#dd-addon .dd-dockmain button{min-height:42px;padding:6px 10px;font-size:.84rem;white-space:nowrap}
+#dd-addon .dd-dockmain .dd-dockprint{flex:1 1 auto;background:var(--blue);color:#fff;border-color:var(--blue)}
+#dd-addon .dd-dockmain .dd-docksave{background:var(--blue-l);color:#144d8b;border-color:#b5d0ef}
+#dd-addon .dd-dockmain button[hidden],#dd-addon #dd-stop:disabled{display:none!important}
+#dd-addon .dd-dockmeta{display:flex;align-items:center;gap:6px;margin-top:5px;font-size:.72rem;color:#64748b;white-space:nowrap;overflow:hidden}
+#dd-addon .dd-dockmeta #dd-count{flex:0 0 auto}
+#dd-addon .dd-dockmeta #dd-state{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#dd-addon .dd-dockmeta progress{flex:0 0 56px;width:56px;height:7px;accent-color:var(--blue)}
+#dd-addon .dd-dockdrawer{flex:1 1 auto;overflow-y:auto;overscroll-behavior:contain;margin-top:7px;padding-top:8px;border-top:1px solid #dee7f0}
+#dd-addon .dd-dockdrawer[hidden]{display:none!important}
+#dd-addon .dd-dockdrawer #rollbox,#dd-addon .dd-dockdrawer #logbox{margin:6px 0!important;padding:9px!important;border:1px solid var(--line)!important;border-radius:12px!important;background:#fff}
+#dd-addon .dd-dockdrawer summary{min-height:36px;display:flex;align-items:center;gap:6px;cursor:pointer;font-weight:700}
+#dd-addon .dd-dockdrawer .rollform input[type=number]{width:7rem}
+#dd-addon .dd-dockdrawer .muted{font-family:inherit;font-size:.8rem;color:#5f6f85;line-height:1.45}
+#dd-addon .dd-dockdrawer summary span{font-weight:500;color:#64748b}
+#dd-addon .dd-dockdrawer .rollctl button,#dd-addon .dd-dockdrawer .logctl button{min-height:40px}
+@media (hover:none){#dd-addon .dd-keyboard-hint{display:none}}
+#dd-addon .dd-dockdrawer #log{max-height:38dvh}
+#dd-addon .dd-docksettings .dd-row,#dd-addon .dd-docksettings>label{margin:8px 0}
+#dd-addon .dd-docksettings>label{display:flex;flex-direction:column;gap:4px;font-size:.82rem;font-weight:650;max-width:220px}
+
+/* ---------- Zuschneide-Dialog ---------- */
+#dd-crop-dialog{border:0;border-radius:16px;padding:0;width:min(96vw,640px);max-width:96vw;max-height:94dvh;overflow:hidden;background:#fff;color:var(--ink);box-shadow:0 15px 65px #1620337a}
+#dd-crop-dialog[open]{display:flex;flex-direction:column}
+#dd-crop-dialog::backdrop{background:rgba(21,32,50,.72)}
+#dd-crop-dialog .crop-body{display:flex;flex-direction:column;min-height:0;max-height:94dvh;padding:12px 14px calc(12px + env(safe-area-inset-bottom));overflow:auto}
+#dd-crop-dialog h3{font-size:1.05rem;margin:0 0 2px}
+#dd-crop-dialog p.dd-caption{margin:8px 0 0}
+#dd-crop-dialog .dd-caption{font-size:.8rem;color:#475569}
+#dd-crop-dialog .crop-presets{display:flex;gap:5px;flex-wrap:wrap;margin:8px 0}
+#dd-crop-dialog .crop-presets button{min-height:36px;padding:4px 10px;border:1px solid #91a8c4;background:#f4f8fc;color:#193e69;border-radius:8px;font-weight:650}
+#dd-crop-dialog .crop-presets button[aria-pressed="true"]{background:#1659a9;color:#fff;border-color:#1659a9}
+#dd-crop-dialog #dd-crop-canvas{display:block;width:100%;height:min(340px,42dvh);flex:0 0 auto;touch-action:none;border-radius:9px;background:#d8dee7;margin:0;border:0}
+#dd-crop-dialog .crop-actions{display:flex;flex-wrap:nowrap;justify-content:flex-end;gap:8px;margin-top:10px}
+#dd-crop-dialog .crop-actions button{flex:1 1 0;min-width:0;min-height:44px;border-radius:10px;padding:8px 6px;border:1px solid #91a8c4;background:#fff;color:#1a3f69;font-weight:650}
+#dd-crop-dialog #dd-crop-save{background:#1659a9;border-color:#1659a9;color:#fff}
+
+/* ---------- Kleine Handys ---------- */
+@media (max-width:420px){
+  #dd-addon .dd-brand small,#dd-addon .dd-preview-head .dd-label-long{display:none}
+  #dd-addon .dd-tabstrip button{padding:8px 10px;font-size:.84rem}
+  #dd-addon .dd-dockmain button{padding:6px 8px;font-size:.8rem}
+}
+/* ---------- Tablet / Laptop: Vorschau links, Werkzeuge rechts ---------- */
+@media (min-width:900px){
+  #dd-addon{gap:10px;padding:10px 14px calc(var(--dock-h) + 10px)}
+  #dd-addon .dd-printerbar{grid-template-columns:auto minmax(0,1fr) auto;align-items:end;column-gap:14px;row-gap:4px;padding:8px 12px}
+  #dd-addon .dd-printerbar-head{flex-direction:column;align-items:flex-start;gap:3px;align-self:center}
+  #dd-addon #dd-printer-toggle,#dd-addon #dd-quick-connect{display:none!important}
+  #dd-addon .dd-printerbar.collapsed .dd-printer-controls,#dd-addon .dd-printerbar.collapsed .dd-printer-actions{display:grid}
+  #dd-addon .dd-printerbar.collapsed .dd-printer-actions{display:flex}
+  #dd-addon .dd-printerbar.collapsed .dd-printer-info{display:block}
+  #dd-addon .dd-printer-info,#dd-addon #dd-blehint{grid-column:1/-1}
+  #dd-addon .dd-printer-actions #identify{flex:0 0 auto;padding:8px 18px}
+  #dd-addon .dd-workspace{flex-direction:row;gap:10px}
+  #dd-addon .dd-toolshell{order:2;flex:0 0 clamp(400px,38vw,540px)!important;height:auto!important;min-height:0;box-shadow:0 2px 10px #1432580f}
+  #dd-addon .dd-gripbar{display:none}
+  #dd-addon .dd-preview-area{padding:8px}
+  #dd-addon #dd-preview-title{font-size:.86rem}
+  #dd-addon .dd-tabstrip{flex-wrap:wrap;overflow:visible;background:#fff}
+  #dd-addon .dd-tabstrip button{flex:1 1 auto;padding:8px 6px;font-size:.8rem}
+  #dd-addon .dd-tabcontent{padding:12px 14px 28px}
+  #dd-addon .dd-imageadjusts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #dd-addon .dd-globaldock{left:14px;right:14px;max-width:1652px;padding:8px 12px 7px;flex-direction:column}
+  #dd-addon .dd-dockmain{max-width:none}
+  #dd-addon .dd-dockmain .dd-dockprint{flex:0 1 380px;margin-left:auto}
+  #dd-addon .dd-dockmain{flex-wrap:nowrap}
+}
+@media (min-width:900px) and (max-height:620px){
+  #dd-addon .dd-printer-info{display:none!important}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
 </style>`;
-    const intro=`<div id="niimbot-mobile-head"><h2>📱 Niimbot Druckstudio für iPhone</h2>
-      <p>Mit Bluefy über HTTPS öffnen. Die originale Bluetooth-Druckerwahl und die gesamte Rollenverwaltung bleiben erhalten.</p>
-      <nav><a href="#identify">🖨 Drucker</a><a href="#dd-addon">📄 Dateien</a><a href="#rollbox">🏷 Rollen</a></nav></div>`;
     const addonMarkup=`<section id="dd-addon" aria-label="Dateien und Warteschlange">
       <h2>PDF & Bilder drucken</h2>
       <div id="dd-blehint" class="dd-warning" hidden></div>
-      <p class="dd-muted">Dateien werden nur auf deinem Gerät verarbeitet. PDF-Seiten sind einzelne Etiketten. Die oben ausgewählte Modell-/Rollen-/Dichte-Einstellung wird übernommen.</p>
+      <p class="dd-muted">Dateien werden nur auf deinem Gerät verarbeitet. Standardmäßig kommen alle ausgewählten Bilder bzw. PDF-Seiten als <strong>einzeln bearbeitbare Ebenen auf dasselbe Etikett</strong>. Für Stapeldruck kannst du stattdessen „jede Datei = eigenes Etikett“ auswählen.</p>
       <div id="dd-drop" class="dd-drop" tabindex="0" role="button"><strong>📂 PDF oder Bilder auswählen</strong>
         <div class="dd-muted">iPhone: antippen und in „Dateien“ auswählen · Desktop: Drag & Drop</div>
         <button type="button" id="dd-picker" class="primary">Dateien hinzufügen</button>
-      </div><input type="file" id="dd-files" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" multiple hidden>
+      </div><input type="file" id="dd-files" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,application/pdf,image/png,image/jpeg,image/webp,image/gif,image/heic" multiple hidden>
       <div class="dd-row"><label>Importieren als
-        <select id="dd-import-mode"><option value="labels">Jede Datei = eigenes Etikett</option><option value="layers">Dateien als Ebenen zum aktuellen Etikett</option></select></label>
+        <select id="dd-import-mode"><option value="layers" selected>Zusammen auf ein Etikett – einzelne Bildebenen</option><option value="labels">Separat – jede Datei/PDF-Seite ein Etikett</option></select></label>
         <label class="dd-check" style="margin:6px 0;align-self:center;flex-direction:row"><input id="dd-crop-onimport" type="checkbox"> Beim Import zuschneiden</label></div>
-      <div class="dd-row"><label>Import-Pixeldichte<select id="dd-importdpi"><option value="original">Original</option><option value="300">300 dpi</option><option value="201">201 dpi</option></select></label>
+      <p id="dd-import-mode-hint" class="dd-caption" role="status">Mehrere Dateien werden auf demselben Etikett eingefügt. Das erste Etikett wird bei Bedarf automatisch angelegt. Jede Bildebene kann im Tab „Ebenen“ separat gewählt und entfernt werden.</p>
+      <div class="dd-row"><label>Import-Pixeldichte<select id="dd-importdpi"><option value="original">Original (Bildpixel)</option><option value="300">300 dpi</option><option value="203">203 dpi</option></select></label>
         <label>Startansicht<select id="dd-fit"><option value="contain">Einpassen</option><option value="cover">Füllen</option></select></label>
         <label>Kopien pro Seite<input id="dd-copies" type="number" value="1" min="1" max="30" inputmode="numeric"></label></div>
       <div class="dd-row"><label>Zoom %<input id="dd-zoom" class="dd-smallinput" type="number" min="5" max="4000" value="100" inputmode="numeric"></label>
-        <label>Bildmodus<select id="dd-bw"><option value="default">Original / Graustufen im Drucker</option><option value="gray">Graustufen</option><option value="bw">Hartes Schwarzweiß (Schwelle)</option></select></label></div>
+        <label>Druckmodus für dieses Bild<select id="dd-bw"><option value="default">Schwarzweiß – Standard (Logos, Text)</option><option value="bw">Schwarzweiß – eigene Schwelle</option><option value="dither">Foto – Rasterung (Graustufen)</option></select></label></div>
       <div class="dd-panel" id="dd-image-panel"><h3>🎚️ Bild bearbeiten</h3>
         <div class="dd-imageadjusts">
           <div class="dd-adjustitem" data-adjust="exposure">
@@ -418,14 +396,14 @@ body.dd-has-studio,#dd-addon{height:var(--studio-height,100dvh)!important;max-he
       </div>
       <div class="dd-toolbar"><button id="dd-zoom-apply" type="button">Zoom anwenden</button><button id="dd-fit-reset" type="button">Einpassen</button><button id="dd-cover-reset" type="button">Füllen</button><button id="dd-clear" type="button">Warteschlange leeren</button><span id="dd-count" class="dd-muted">0 Etiketten</span></div>
       <div id="dd-queue" class="dd-queue" aria-live="polite"></div>
-      <div class="dd-layer-files"><button id="dd-add-layer" type="button">+ Bilder/PDF zum Etikett hinzufügen</button>
-        <input id="dd-layer-files" type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" multiple hidden>
+      <div class="dd-layer-files"><button id="dd-add-layer" type="button">+ Weitere Bilder/PDF als Ebenen</button>
+        <input id="dd-layer-files" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.heic,application/pdf,image/png,image/jpeg,image/webp,image/gif,image/heic" multiple hidden>
         <button id="dd-crop-image" type="button">✂️ Gewähltes Bild zuschneiden</button></div>
       <div id="dd-active-image" class="dd-activeimage" aria-live="polite">Bild auswählen und bearbeiten</div>
-      <p class="dd-layer-hint">Antippen wählt eine Bild- oder Textebene. Ziehen verschiebt nur dieses Element. Über „Ebenen“ kannst du Dateien und Texte nach vorne oder hinten legen oder mit 🔒 gegen Änderungen sperren. Der kleine Regler links skaliert nur die Ansicht – die Druckgröße bleibt unverändert.</p>
+      <p class="dd-layer-hint">Im Tab „Ebenen“ kannst du jede importierte Bilddatei einzeln auswählen oder über „Entfernen“ löschen. Antippen wählt eine Bild- oder Textebene. Ziehen verschiebt nur dieses Element. Über „Ebenen“ kannst du Dateien und Texte nach vorne oder hinten legen oder mit 🔒 gegen Änderungen sperren. Die Zoom-Knöpfe in der Vorschau ändern nur die Ansicht – die Druckgröße bleibt unverändert.</p>
       <div id="dd-preview-title" class="dd-muted">Ausschnitt & Druckvorschau</div>
-      <div class="dd-editorstage"><div id="dd-viewzoom-wrap" class="dd-viewzoom"><label for="dd-viewzoom">Ansicht</label><button id="dd-viewzoom-plus" type="button" aria-label="Ansicht vergrößern">+</button><input id="dd-viewzoom" type="range" min="20" max="250" step="5" value="100" aria-label="Gesamte Vorschau inklusive Etikett zoomen"><button id="dd-viewzoom-minus" type="button" aria-label="Ansicht verkleinern">−</button><div id="dd-viewzoom-value">100%</div></div><div id="dd-editorwrap" class="dd-editorwrap"><canvas id="dd-editor"></canvas></div></div>
-      <p class="dd-muted">Bedienung: Bild mit einem Finger verschieben, mit zwei Fingern zoomen, über den unteren rechten Griff skalieren oder über den oberen linken Griff drehen. Text antippen und verschieben. Mit dem linken Ansichtsschieber kannst du die komplette Vorschau inklusive rotem Druckrahmen größer oder kleiner darstellen. Der rote Rahmen ist der zu druckende Bereich.</p>
+      <div class="dd-editorstage"><div id="dd-editorwrap" class="dd-editorwrap"><canvas id="dd-editor" tabindex="0"></canvas></div><div id="dd-viewzoom-wrap" class="dd-viewzoom" role="group" aria-label="Ansichtsgröße"><label for="dd-viewzoom">Zoom</label><input id="dd-viewzoom" type="range" min="20" max="400" step="5" value="100" aria-label="Vorschau zoomen"><button id="dd-viewzoom-minus" type="button" aria-label="Ansicht verkleinern">−</button><div id="dd-viewzoom-value" role="button" tabindex="0" title="Auf 100 % zurücksetzen">100%</div><button id="dd-viewzoom-plus" type="button" aria-label="Ansicht vergrößern">+</button></div></div>
+      <p class="dd-muted">Bedienung: Bild oder Text antippen und mit einem Finger verschieben, mit zwei Fingern zoomen und drehen. Griff oben links dreht, Griff unten rechts skaliert. Mit − / + unten rechts in der Vorschau änderst du nur die Ansichtsgröße. Der rote Rahmen ist der Druckbereich.</p>
       <div class="dd-row"><div style="flex:1;min-width:220px"><div class="dd-muted" style="margin-bottom:6px">Ausrichten</div><div class="dd-controlgrid"><button id="dd-align-left" type="button">Links</button><button id="dd-align-center-x" type="button">Horizontal zentrieren</button><button id="dd-align-right" type="button">Rechts</button><button id="dd-align-top" type="button">Oben</button><button id="dd-align-center-y" type="button">Vertikal zentrieren</button><button id="dd-align-bottom" type="button">Unten</button></div></div>
       <div class="fit"><div class="dd-muted" style="margin-bottom:6px">Verschieben</div><div class="dd-direction"><span class="sp">·</span><button id="dd-nudge-up" type="button">↑</button><span class="sp">·</span><button id="dd-nudge-left" type="button">←</button><span class="sp">·</span><button id="dd-nudge-right" type="button">→</button><span class="sp">·</span><button id="dd-nudge-down" type="button">↓</button><span class="sp">·</span></div></div></div>
       <div class="dd-panel" id="dd-text-panel">
@@ -489,7 +467,7 @@ body.dd-has-studio,#dd-addon{height:var(--studio-height,100dvh)!important;max-he
           <div class="dd-toolbar"><button id="dd-select-image" type="button">Bild auswählen</button><button id="dd-text-tofront" type="button">In den Vordergrund</button><button id="dd-text-toback" type="button">In den Hintergrund</button></div>
           <div class="dd-caption">Ebenen (oben in der Liste = vorne). Mehrere Bilder und Texte lassen sich unabhängig verschieben, zuschneiden und stapeln.</div><div id="dd-layers" class="dd-layerlist"></div>
         </div>
-        <details style="margin-top:12px" open><summary style="font-weight:700;cursor:pointer">Eigene Schriftarten dauerhaft speichern</summary>
+        <details class="dd-fontbox"><summary>Aa Eigene Schriftarten hochladen</summary>
           <p class="dd-muted">TTF, OTF, WOFF oder WOFF2 auswählen. Fonts werden lokal in diesem Browserprofil (IndexedDB) gespeichert und beim nächsten Besuch wieder geladen.</p>
           <input id="dd-fontfile" type="file" accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2" multiple>
           <p id="dd-fontstatus" class="dd-muted" role="status">Noch keine eigenen Fonts geladen.</p><div id="dd-fontlist"></div>
@@ -497,18 +475,18 @@ body.dd-has-studio,#dd-addon{height:var(--studio-height,100dvh)!important;max-he
           <p class="dd-muted">Achtung: Browserdaten löschen oder einen anderen Browser/eine andere Website verwenden entfernt bzw. trennt die gespeicherten Fonts. Bewahre deine Original-Fontdateien als Backup auf.</p>
         </details>
       </div>
-      <div class="dd-row"><button id="dd-print" type="button" class="primary" disabled>🖨 Alle nacheinander drucken</button>
+      <div class="dd-row"><button id="dd-print" type="button" class="primary" disabled>🖨️ Drucken</button>
         <button id="dd-stop" type="button" disabled>Nach dem Stapel stoppen</button></div>
       <progress id="dd-progress" max="100" value="0"></progress>
       <div id="dd-state" role="status" aria-live="polite">Dateien auswählen, Drucker verbinden und Rolle wählen.</div>
-      <p class="dd-warning">Tipp: Für den ersten Test nur 1 Etikett drucken. Ein abgebrochener Auftrag kann bereits teilweise gedruckt sein. Ein Bluetooth-Dialog muss über den originalen Verbindungsbutton oben geöffnet werden.</p>
+      <p class="dd-warning">Tipp: Für den ersten Test nur 1 Etikett drucken. Ein abgebrochener Auftrag kann bereits teilweise gedruckt sein. Die Bluetooth-Auswahl öffnet sich über „🔗 Verbinden“ oben.</p>
     </section>`;
     if(!html.includes('</head>')||!html.includes('</body>')||!html.includes('<body>')){
       document.getElementById('boot-error').textContent='Ungültiges HTML aus der Originalquelle.';return;
     }
-    html=html.replace('<head>', '<head>'+base+'<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b2444">');
+    html=html.replace(/<meta name="viewport"[^>]*>/i,'');
+    html=html.replace('<head>', '<head>'+base+'<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b2444"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="format-detection" content="telephone=no">');
     html=html.replace('</head>',extraStyle+'</head>');
-    html=html.replace('<body>','<body>'+intro);
     html=html.replace('<details id="rollbox">',addonMarkup+'<details id="rollbox">');
     html=html.replace('</body>',`<dialog id="dd-crop-dialog" aria-label="Bild zuschneiden">
       <div class="crop-body">

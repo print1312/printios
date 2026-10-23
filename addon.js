@@ -3,7 +3,7 @@ const state = {
   queue: [], pdfJs: null, registry: null, selected: -1,
   printing: false, stop: false, previewVersion: 0, fonts: [], textSelectedId: null, activeImageId: "image", cropState: null,
   editor: { pointers: new Map(), mode: null, start: null, crop: null, sizeInfo: null, entry: null },
-  viewZoom: 1, showOutsideBounds: false, savedTemplates: []
+  viewZoom: 1, showOutsideBounds: false, savedTemplates: [], labelRotateMode: "keep", printView: true
 };
 // Undo/redo tracks editable label data. Files/Blobs are kept by reference instead
 // of being duplicated, so a large image is not copied on every touch operation.
@@ -214,28 +214,8 @@ async function restoreTemplateFonts(record){
 }
 async function serializeFonts(fonts){return Promise.all((fonts||[]).map(async f=>({id:f.id,name:f.name,blobData:await blobToDataURL(new Blob([f.bytes],{type:'application/octet-stream'}))})));}
 function entryTemplateName(entry){const input=$("dd-template-name");const fromInput=input?.dataset.entry===entry?.editorId?input.value.trim():'';return fromInput||entry?.templateName||entry?.name||("Label "+(state.queue.length||1));}
-function copyLayoutForTarget(layout,sx,sy,s){if(!layout)return null;return {...layout,tx:(Number(layout.tx)||0)*sx,ty:(Number(layout.ty)||0)*sy,scale:(Number(layout.scale)||1)*s,baseScale:(Number(layout.baseScale)||1)*s};}
-function adaptEntryToCurrentSize(entry,record){
- let baseInfo;try{baseInfo=readSize();}catch(e){return entry;}
- const sourceSize=sizeByKey(record?.sizeKey);if(!sourceSize)return entry;
- const sourceEntry={pageRotation:record?.pageRotation===90?90:0};
- const sourceEffective=effectiveSizeInfo(sourceEntry,{...baseInfo,size:{...sourceSize},sizeKey:record.sizeKey});
- const targetEffective=effectiveSizeInfo(entry,baseInfo);
- const sx=targetEffective.size.w_px/sourceEffective.size.w_px,sy=targetEffective.size.h_px/sourceEffective.size.h_px,s=Math.min(sx,sy);
- if(!isFinite(sx)||!isFinite(sy)||sx<=0||sy<=0)return entry;
- for(const t of (entry.texts||[])){
-   t.x=(Number(t.x)||0)*sx;t.y=(Number(t.y)||0)*sy;t.size=Math.max(4,(Number(t.size)||32)*s);
-   if(t.boxW)t.boxW=(Number(t.boxW)||0)*sx;if(t.boxH)t.boxH=(Number(t.boxH)||0)*sy;
-   if(t.curveRadius)t.curveRadius=(Number(t.curveRadius)||0)*s;
- }
- const sourceKey=record.sizeKey+(record?.pageRotation===90?"|r90":"");
- const targetKey=baseInfo.sizeKey+orientationSuffix(entry);
- const remapLayouts=obj=>{if(!obj)return;const all=obj.layouts||{};const src=all[sourceKey]||all[record.sizeKey]||Object.values(all)[0]||null;obj.layouts={};if(src)obj.layouts[targetKey]=copyLayoutForTarget(src,sx,sy,s);};
- remapLayouts(entry);for(const layer of (entry.images||[]))remapLayouts(layer);
- return entry;
-}
 async function makeTemplateThumbnail(entry,info){
- const full=await renderLabelCanvas(entry,info);const t=document.createElement('canvas');const factor=Math.min(1,240/Math.max(full.width,full.height));t.width=Math.max(1,Math.round(full.width*factor));t.height=Math.max(1,Math.round(full.height*factor));t.getContext('2d').drawImage(full,0,0,t.width,t.height);full.width=full.height=0;
+ const full=await renderLabelCanvas(entry,info,{oneBit:true});const t=document.createElement('canvas');const factor=Math.min(1,240/Math.max(full.width,full.height));t.width=Math.max(1,Math.round(full.width*factor));t.height=Math.max(1,Math.round(full.height*factor));t.getContext('2d').drawImage(full,0,0,t.width,t.height);full.width=full.height=0;
  const blob=await new Promise((resolve,reject)=>t.toBlob(v=>v?resolve(v):reject(Error('Vorschaubild konnte nicht erstellt werden')),'image/png'));
  t.width=t.height=0;return blob;
 }
@@ -262,27 +242,25 @@ async function exportCurrentTemplateFile(){
  const record={version:2,type:'niimbot-template',id:uid('tpl_'),name,folder,createdAt:now,updatedAt:now,sizeKey:baseInfo.sizeKey,sizeMeta:baseInfo.size,modelDpi:baseInfo.model.dpi||baseInfo.size.dpi||201,sizeLabel,modelKey:baseInfo.modelKey,pageRotation:entry.pageRotation===90?90:0,fonts:await serializeFonts(fonts),entry:await serializeEntryForTemplate(entry)};
  const safe=name.replace(/[^a-z0-9äöüß_-]+/gi,'_');downloadBlob(safe+'.niimbot-label.json',new Blob([JSON.stringify(record,null,2)],{type:'application/json'}));message('Vorlage lokal exportiert: '+name);
 }
-function templateSourceInfo(record){
- let base=readSize();const size=record.sizeMeta||sizeByKey(record.sizeKey);
- if(!size)throw Error('Die Original-Etikettengröße ist unbekannt. Vorlage als editierbare Ebenen öffnen.');
- return {...base,size:{...size},sizeKey:record.sizeKey||base.sizeKey};
-}
 function sameTemplateSize(record,info){const source=record.sizeMeta||sizeByKey(record.sizeKey);return !!source&&Number(source.w_px)===Number(info.size.w_px)&&Number(source.h_px)===Number(info.size.h_px)&&(!record.modelDpi||Number(record.modelDpi)===Number(info.model?.dpi||info.size.dpi||201));}
-async function flattenEntryForResizing(entry,sourceInfo,name){
- const full=await renderLabelCanvas(entry,sourceInfo);const blob=await new Promise((resolve,reject)=>full.toBlob(b=>b?resolve(b):reject(Error('Etikett konnte nicht in ein Bild umgewandelt werden')),'image/png'));
- full.width=full.height=0;
- return {kind:'image',blob,name:name+' (angepasst)',importDpi:'original',layouts:{},texts:[],images:[],layers:['image'],crop:{x:0,y:0,w:1,h:1,shape:'rect',preset:'free'},pageRotation:0,templateFlattened:true};
-}
 async function prepareTemplateEntry(record,mode='edit'){
  await restoreTemplateFonts(record);const currentInfo=readSize();let entry=snapshotClone(record.entry);delete entry.editorId;const isSame=sameTemplateSize(record,currentInfo);
- if(!isSame)entry=await flattenEntryForResizing(entry,templateSourceInfo(record),record.name);
- else {
+ entry.pageRotation=record.pageRotation===90?90:(entry.pageRotation===90?90:0);
+ if(!isSame&&!entry.templateFlattened){
+  const sourceSize=record.sizeMeta||sizeByKey(record.sizeKey);
+  if(sourceSize){
+   const fromInfo={...currentInfo,model:{...currentInfo.model,dpi:record.modelDpi||sourceSize.dpi},size:{dpi:record.modelDpi||sourceSize.dpi,...sourceSize},sizeKey:record.sizeKey};
+   // Older templates may carry a layout under a different key; normalise to the source key first.
+   for(const {layer} of allImages(entry)){const all=layer.layouts||{},key=fromInfo.sizeKey+orientationSuffix(entry);if(!all[key]){const src=Object.values(all)[0];if(src){layer.layouts={...all,[key]:src};}}}
+   remapEntry(entry,fromInfo,currentInfo);
+  }
+ }else{
   const oldKey=record.sizeKey+orientationSuffix(entry),newKey=currentInfo.sizeKey+orientationSuffix(entry);
   if(oldKey!==newKey)for(const layer of [entry,...(entry.images||[])]){if(layer.layouts?.[oldKey])layer.layouts[newKey]=snapshotClone(layer.layouts[oldKey]);}
-  entry.templateSourceSizeKey=currentInfo.sizeKey;entry.templateSourceSizeMeta={...currentInfo.size};
  }
+ entry.templateSourceSizeKey=currentInfo.sizeKey;entry.templateSourceSizeMeta={...currentInfo.size};
  if(mode==='edit'&&isSame)entry.templateId=record.id;else delete entry.templateId;
- entry.templateName=record.name;entry.templateFolder=record.folder||'Meine Vorlagen';entry.pageRotation=isSame?(record.pageRotation===90?90:0):0;
+ entry.templateName=record.name;entry.templateFolder=record.folder||'Meine Vorlagen';
  return {entry,isSame};
 }
 async function openTemplateRecord(record,{mode='edit'}={}){
@@ -292,34 +270,62 @@ async function openTemplateRecord(record,{mode='edit'}={}){
   beginHistory('Vorlage '+(mode==='queue'?'in Warteschlange':'öffnen'));
   state.queue.push(entry);state.selected=state.queue.length-1;state.textSelectedId=null;state.activeImageId='image';showQueue();renderTextControls();setImagePanel(activeImageLayer(entry));requestPreview();scheduleHistoryCommit(100);
   if(mode!=='queue')window.NiimbotStudioUI?.selectTab(isSame?'text':'align');
-  message(mode==='queue'?'Vorlage zur Warteschlange hinzugefügt: '+record.name:isSame?'Vorlage '+(mode==='copy'?'als Kopie':'zum Bearbeiten')+' geöffnet.':'Vorlage auf '+($('size')?.selectedOptions?.[0]?.textContent?.trim()||'neue Größe')+' als frei verschiebbares Gesamtbild geladen. Original bleibt gespeichert.');
+  message(mode==='queue'?'Vorlage zur Warteschlange hinzugefügt: '+record.name:isSame?'Vorlage '+(mode==='copy'?'als Kopie':'zum Bearbeiten')+' geöffnet.':'Vorlage auf '+($('size')?.selectedOptions?.[0]?.textContent?.trim()||'neue Größe')+' angepasst – alle Ebenen bleiben bearbeitbar. Das Original bleibt unverändert gespeichert.');
  }catch(e){message('Vorlage konnte nicht geöffnet werden: '+(e.message||e),true);}finally{state.templateBusy=false;refreshBusyUi();}
 }
 async function printSavedTemplate(record){return runPrintJob(async()=>[(await prepareTemplateEntry(record,'queue')).entry],1);}
+// Moves every text and image layer of an entry from one label size to another.
+// Each label size remembers its own arrangement: switching back restores it exactly.
+// A size that was never used before gets a proportional copy of the current design,
+// so everything stays editable (nothing is flattened into a single picture).
+const TEXT_GEOMETRY_KEYS=['x','y','size','boxW','boxH','curveRadius','letterSpace'];
+function remapEntry(entry,fromBase,toBase){
+ const from=effectiveSizeInfo(entry,fromBase),to=effectiveSizeInfo(entry,toBase);
+ const fw=Number(from.size.w_px),fh=Number(from.size.h_px),tw=Number(to.size.w_px),th=Number(to.size.h_px);
+ if(!(fw>0&&fh>0&&tw>0&&th>0))return false;
+ if(from.sizeKey===to.sizeKey&&fw===tw&&fh===th)return false;
+ const sx=tw/fw,sy=th/fh,s=Math.min(sx,sy),dpiRatio=sizeDpi(to.size)/sizeDpi(from.size);
+ for(const t of entry.texts||[]){
+  t.layouts=(t.layouts&&typeof t.layouts==='object')?t.layouts:{};
+  const current={};for(const k of TEXT_GEOMETRY_KEYS)current[k]=Number(t[k])||0;
+  t.layouts[from.sizeKey]=current;
+  const saved=t.layouts[to.sizeKey];
+  if(saved&&TEXT_GEOMETRY_KEYS.every(k=>Number.isFinite(Number(saved[k])))){for(const k of TEXT_GEOMETRY_KEYS)t[k]=Number(saved[k]);continue;}
+  t.x=current.x*sx;t.y=current.y*sy;t.size=Math.max(4,Math.min(600,(current.size||32)*s));
+  t.boxW=current.boxW?Math.max(20,current.boxW*sx):0;t.boxH=current.boxH?Math.max(20,current.boxH*sy):0;
+  t.curveRadius=current.curveRadius*s;t.letterSpace=current.letterSpace*s;
+ }
+ for(const {layer} of allImages(entry)){
+  layer.layouts||={};
+  if(layer.layouts[to.sizeKey])continue;
+  const old=layer.layouts[from.sizeKey];if(!old)continue;
+  const ratio=importDpiValue(layer)?dpiRatio:1;
+  layer.layouts[to.sizeKey]={...old,tx:(Number(old.tx)||0)*sx,ty:(Number(old.ty)||0)*sy,scale:clampScale((Number(old.scale)||1)*s/ratio),baseScale:(Number(old.baseScale)||1)*s/ratio,refW:old.refW*ratio,refH:old.refH*ratio};
+ }
+ return true;
+}
+function sizeInfoFromSettings(settings){
+ const model=state.registry?.models?.[settings?.model],size=sizeByKey(settings?.size);
+ if(!model||!size)return null;return {model,size,sizeKey:settings.size,modelKey:settings.model};
+}
 async function handleSizeChange(){
  if(!loaded()||history.restoring)return;
- const now=readSettings();if(!committedSettings){committedSettings=now;return;}
+ updatePrinterSummary();
+ const now=readSettings();if(!committedSettings){committedSettings=now;requestPreview();return;}
  if(now.model===committedSettings.model&&now.size===committedSettings.size&&now.density===committedSettings.density)return;
  if(isBusy()){restoreSettings(committedSettings);return;}
- clearHistoryTimer();commitHistory();beginHistory('Druckeinstellungen wechseln');history.hold=true;state.resizingTemplate=true;refreshBusyUi();
+ clearHistoryTimer();commitHistory();beginHistory('Druckeinstellungen wechseln');history.hold=true;
  try{
-  const newInfo=readSize();
-  const replacements=[];
-  for(let i=0;i<state.queue.length;i++){
-   const entry=state.queue[i];if(!entry.templateSourceSizeKey||entry.templateFlattened)continue;
-   const record={sizeMeta:entry.templateSourceSizeMeta,sizeKey:entry.templateSourceSizeKey};
-   if(sameTemplateSize(record,newInfo)){
-    const oldKey=entry.templateSourceSizeKey+orientationSuffix(entry),newKey=newInfo.sizeKey+orientationSuffix(entry);
-    for(const layer of [entry,...(entry.images||[])])if(layer.layouts?.[oldKey])layer.layouts[newKey]=snapshotClone(layer.layouts[oldKey]);
-    entry.templateSourceSizeKey=newInfo.sizeKey;continue;
-   }
-   const source={...newInfo,size:{...entry.templateSourceSizeMeta},sizeKey:entry.templateSourceSizeKey};
-   replacements.push([i,await flattenEntryForResizing(snapshotClone(entry),source,entry.templateName||entry.name)]);
+  let newInfo=null;try{newInfo=readSize();}catch(e){}
+  const oldInfo=sizeInfoFromSettings(committedSettings);
+  let moved=0;
+  if(newInfo&&oldInfo&&(now.size!==committedSettings.size||now.model!==committedSettings.model)){
+   for(const entry of state.queue)if(remapEntry(entry,oldInfo,newInfo))moved++;
   }
-  for(const [i,entry] of replacements)state.queue[i]=entry;
-  committedSettings=now;if(replacements.length)message('Neue Rollengröße: '+replacements.length+' gespeicherte Vorlage(n) als Gesamtbild übernommen.');
- }catch(e){restoreSettings(committedSettings);message('Größenwechsel fehlgeschlagen: '+e.message,true);}
- finally{history.hold=false;state.resizingTemplate=false;commitHistory();refreshBusyUi();showQueue();renderTextControls();setImagePanel(activeImageLayer(state.queue[state.selected]));requestPreview();}
+  committedSettings=now;
+  if(moved)message('Neue Etikettgröße: '+moved+' Etikett(en) proportional angepasst. Alles bleibt bearbeitbar.');
+ }catch(e){restoreSettings(committedSettings);message('Größenwechsel fehlgeschlagen: '+(e.message||e),true);}
+ finally{history.hold=false;commitHistory();refreshBusyUi();showQueue();renderTextControls();setImagePanel(activeImageLayer(state.queue[state.selected]));requestPreview();}
 }
 async function deleteTemplateRecord(id){
  const record=state.savedTemplates.find(t=>t.id===id);if(!record)return;
@@ -353,6 +359,7 @@ function validateEntry(entry){
   if(t.font!==undefined&&typeof t.font!=='string')throw Error('Ungültige Schriftreferenz');
   for(const k of ['boxW','boxH','rotation','zoomScale','widthPct','curveDeg','curveRadius','letterSpace','lineHeight'])if(t[k]!==undefined&&!Number.isFinite(t[k]))throw Error('Ungültiger Textwert: '+k);
   if(t.size<4||t.size>600||t.zoomScale!==undefined&&(t.zoomScale<.05||t.zoomScale>40))throw Error('Ungültige Textgröße');
+  if(t.layouts!==undefined){if(!t.layouts||typeof t.layouts!=='object'||Array.isArray(t.layouts)||Object.keys(t.layouts).length>60)throw Error('Ungültige Textpositionen');for(const l of Object.values(t.layouts))if(!l||typeof l!=='object'||!TEXT_GEOMETRY_KEYS.every(k=>l[k]===undefined||Number.isFinite(l[k])))throw Error('Ungültige Textposition');}
  }
  return entry;
 }
@@ -380,7 +387,7 @@ async function importTemplateFile(file){
   state.savedTemplates.unshift(...records);renderTemplateLibrary();message(records.length+' Vorlage(n) importiert.');
  }finally{state.templateBusy=false;refreshBusyUi();}
 }
-function updateTemplateUiState(){const hasCurrent=!!state.queue[state.selected];for(const id of ["dd-template-save-browser","dd-template-save-as","dd-template-export-file"]){if($(id))$(id).disabled=!hasCurrent||isBusy();}if($("dd-label-rotation-status"))$("dd-label-rotation-status").textContent=state.queue[state.selected]?.pageRotation===90?"90° Hochkant":"0° Querformat";if($("dd-preview-overflow-toggle")){$("dd-preview-overflow-toggle").textContent=state.showOutsideBounds?"Außen ausblenden":"Außen zeigen";$("dd-preview-overflow-toggle").setAttribute("aria-pressed",String(state.showOutsideBounds));}if($("dd-show-outside-check"))$("dd-show-outside-check").checked=!!state.showOutsideBounds;}
+function updateTemplateUiState(){const hasCurrent=!!state.queue[state.selected];for(const id of ["dd-template-save-browser","dd-template-save-as","dd-template-export-file"]){if($(id))$(id).disabled=!hasCurrent||isBusy();}if($("dd-label-rotation-status"))$("dd-label-rotation-status").textContent=state.queue[state.selected]?.pageRotation===90?"90° Hochkant":"0° Querformat";if($("dd-preview-overflow-toggle")){$("dd-preview-overflow-toggle").textContent="⬚ Außen";$("dd-preview-overflow-toggle").setAttribute("aria-pressed",String(state.showOutsideBounds));}if($("dd-printview-toggle")){const b=$("dd-printview-toggle");b.textContent=state.printView?"◐ Druckansicht":"🎨 Original";b.setAttribute("aria-pressed",String(state.printView));b.title=state.printView?"Zeigt genau, was gedruckt wird (nur Schwarz/Weiß). Tippen für Originalfarben.":"Zeigt Originalfarben. Tippen für die echte Druckansicht.";}if($("dd-show-outside-check"))$("dd-show-outside-check").checked=!!state.showOutsideBounds;}
 let templateThumbUrls=[];
 function renderTemplateLibrary(){
  const list=$('dd-template-list');if(!list)return;
@@ -405,18 +412,36 @@ function renderTemplateLibrary(){
 function toggleLabelRotation(){
  const entry=state.queue[state.selected];if(!entry){message('Bitte zuerst ein Etikett auswählen.',true);return;}
  const current=currentEntryAndLayout();if(!current)return;
- beginHistory('Druckbereich 90° drehen');
+ // Turning the rectangular print area swaps its logical width/height. The user
+ // can choose between a stationary design and rotating every layer with it.
+ const rotateWithContent=(state.labelRotateMode==='with');
+ const delta=entry.pageRotation===90?-90:90;
  const oldW=current.sizeInfo.size.w_px,oldH=current.sizeInfo.size.h_px;
- const newW=oldH,newH=oldW;
- for(const t of (entry.texts||[])){t.x=(Number(t.x)||0)-oldW/2+newW/2;t.y=(Number(t.y)||0)-oldH/2+newH/2;}
- const oldKey=current.sizeInfo.sizeKey;
+ const newW=oldH,newH=oldW,oldKey=current.sizeInfo.sizeKey;
+ beginHistory('Druckbereich 90° drehen'+(rotateWithContent?' · mit Inhalt':' · Inhalt beibehalten'));
+ const transform=(x,y)=>{
+  const dx=(Number(x)||0)-oldW/2,dy=(Number(y)||0)-oldH/2;
+  return rotateWithContent ? {x:newW/2+(delta===90?-dy:dy),y:newH/2+(delta===90?dx:-dx)} : {x:newW/2+dx,y:newH/2+dy};
+ };
+ for(const t of entry.texts||[]){
+  const pos=transform(t.x,t.y);t.x=pos.x;t.y=pos.y;
+  if(rotateWithContent)t.rotation=normalizeAngle((Number(t.rotation)||0)+delta);
+ }
  entry.pageRotation=entry.pageRotation===90?0:90;
  const newKey=readSize().sizeKey+orientationSuffix(entry);
  for(const layer of allImages(entry).map(x=>x.layer)){
-  const prev=layer.layouts?.[oldKey];if(prev){layer.layouts||={};layer.layouts[newKey]=snapshotClone(prev);}
+  const previous=layer.layouts?.[oldKey];if(!previous)continue;
+  const next=snapshotClone(previous);
+  if(rotateWithContent){
+    const tx=Number(previous.tx)||0,ty=Number(previous.ty)||0;
+    next.tx=delta===90?-ty:ty;
+    next.ty=delta===90?tx:-tx;
+    next.rotation=normalizeAngle((Number(previous.rotation)||0)+delta);
+  }
+  layer.layouts||={};layer.layouts[newKey]=next;
  }
- requestPreview();showQueue();scheduleHistoryCommit(120);
- message(entry.pageRotation===90?'Druckbereich 90° hochkant. Der physische Druck bleibt an die eingelegte Rolle angepasst.':'Druckbereich wieder quer.');
+ requestPreview();showQueue();renderTextControls();setImagePanel(activeImageLayer(entry));scheduleHistoryCommit(120);
+ message((entry.pageRotation===90?'Hochkant':'Querformat')+': '+(rotateWithContent?'alle Bild- und Textebenen mitgedreht.':'Bild- und Textebenen behalten ihre Ausrichtung.'));
 }
 function bluetoothHint(){
   const hint=$('dd-blehint'); if(!hint)return;
@@ -432,6 +457,7 @@ const message = (text, isError = false) => {
 function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
 function buttonState(){
   $('dd-print').disabled = !state.queue.length || isBusy() || !loaded();
+  if(!state.printing){const n=state.queue.length*copyCount();$('dd-print').textContent=n>1?'🖨️ Drucken ('+n+')':'🖨️ Drucken';$('dd-print').title=n>1?n+' Etiketten nacheinander drucken':'Etikett drucken';}
   $('dd-clear').disabled = isBusy() || !state.queue.length;
   for(const id of ['dd-files','dd-layer-files','dd-picker','dd-add-layer','dd-add-blank','dd-fontfile','dd-template-import-btn'])if($(id))$(id).disabled=isBusy();
   $('dd-stop').disabled = !state.printing;
@@ -455,25 +481,58 @@ function readSize(){
   if(size.dpi && model.dpi && size.dpi!==model.dpi) throw Error('Das gewählte Etikett ist nicht für dieses Druckermodell kalibriert.');
   return {model,size,sizeKey,modelKey,density:Number($('density').value)||model.density||3};
 }
-function loadScript(url){return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=url;script.async=true;script.onload=resolve;script.onerror=()=>reject(Error('PDF-Bibliothek nicht geladen. Den vollständigen vendor-Ordner mit hochladen.'));document.head.appendChild(script);});}
+function loadScript(url){return new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=url;script.async=true;script.onload=resolve;script.onerror=()=>reject(Error('PDF-Bibliothek nicht geladen. Bitte prüfe, ob pdf.min.js im Hauptverzeichnis liegt.'));document.head.appendChild(script);});}
 async function pdfLib(){ if(state.pdfJs)return state.pdfJs; if(!window.pdfjsLib)await loadScript(PDF_URL); if(!window.pdfjsLib)throw Error('PDF.js ist nicht verfügbar.'); window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDF_WORKER; state.pdfJs=window.pdfjsLib; return state.pdfJs; }
 function swap(i,j){ [state.queue[i],state.queue[j]]=[state.queue[j],state.queue[i]]; if(state.selected===i)state.selected=j; else if(state.selected===j)state.selected=i; showQueue(); }
+const thumbCache=new WeakMap();let thumbJob=null;
+function storeThumb(entry,label){
+ try{const f=Math.min(1,96/Math.max(label.width,label.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(label.width*f));c.height=Math.max(1,Math.round(label.height*f));
+  const x=c.getContext('2d');x.imageSmoothingQuality='high';x.drawImage(label,0,0,c.width,c.height);const url=c.toDataURL('image/png');c.width=c.height=0;
+  thumbCache.set(entry,url);const i=state.queue.indexOf(entry),img=document.querySelector('#dd-queue [data-index="'+i+'"] .dd-thumb img');if(img)img.src=url;
+ }catch(e){}
+}
+function scheduleThumbs(){
+ if(thumbJob)return;
+ thumbJob=(async()=>{
+  try{
+   for(let n=0;n<40;n++){
+    if(isBusy())break;
+    const entry=state.queue.find(e=>!thumbCache.has(e));if(!entry)break;
+    await sleep(60);
+    let info;try{info=readSize();}catch(e){break;}
+    try{const label=await renderLabelCanvas(entry,info,{oneBit:true});storeThumb(entry,label);label.width=label.height=0;}catch(e){thumbCache.set(entry,'');}
+    if(entry!==state.queue[state.selected])releaseDecodedImages(entry);
+   }
+  }finally{thumbJob=null;}
+ })();
+}
+function selectQueueEntry(i){
+ if(i<0||i>=state.queue.length)return;
+ state.selected=i;state.textSelectedId=null;state.activeImageId='image';
+ showQueue();renderTextControls();setImagePanel(activeImageLayer(state.queue[i]));showPreview();
+}
 function showQueue(){
   for(const item of state.queue)if(item!==state.queue[state.selected])releaseDecodedImages(item);
   const root=$('dd-queue'); root.replaceChildren(); const total=state.queue.length; const copies=copyCount();
-  $('dd-count').textContent=total+' Seite(n) · '+(total*copies)+' Etikett(en) inkl. Kopien';
+  $('dd-count').textContent=total?(total+(total===1?' Etikett':' Etiketten')+(copies>1?' × '+copies+' Kopien':'')):'Noch kein Etikett';
+  if(!total){const p=document.createElement('p');p.className='dd-muted';p.textContent='Die Warteschlange ist leer. Bilder/PDF importieren oder ein leeres Etikett anlegen.';root.append(p);}
   state.queue.forEach((entry,i)=>{
-    const row=document.createElement('div'); row.className='dd-queueitem'; if(state.selected===i)row.style.borderColor='#155bb0';
-    const im=document.createElement('div'); im.className='dd-thumb'; im.textContent=(entry.kind==='pdf'?'PDF':'IMG'); im.style.cssText+='display:grid;place-items:center;font-size:.65rem;font-weight:750;color:#64748b';
+    const row=document.createElement('div'); row.className='dd-queueitem'+(state.selected===i?' selected':''); row.dataset.index=String(i);
+    row.addEventListener('click',e=>{if(e.target.closest('button')||isBusy())return;selectQueueEntry(i);});
+    const im=document.createElement('div'); im.className='dd-thumb';
+    const url=thumbCache.get(entry);
+    if(url){const img=document.createElement('img');img.alt='';img.src=url;im.append(img);}else{const img=document.createElement('img');img.alt='';im.append(img);im.dataset.kind=entry.kind==='pdf'?'PDF':'IMG';}
     const details=document.createElement('div');
-    const title=document.createElement('div'); title.className='dd-title'; title.textContent=entry.name+(entry.pageRotation===90?' · 90°':'');
-    const sub=document.createElement('div'); sub.className='dd-muted'; sub.textContent='Import: '+(entry.importDpi==='original'?'Original':entry.importDpi+' dpi')+(entry.templateName?' · Vorlage: '+entry.templateName:'');
+    const title=document.createElement('div'); title.className='dd-title'; title.textContent=(i+1)+'. '+entry.name+(entry.pageRotation===90?' · 90°':'');
+    const sub=document.createElement('div'); sub.className='dd-muted';
+    const nImg=allImages(entry).length,nTxt=(entry.texts||[]).length;
+    sub.textContent=[nImg?nImg+(nImg===1?' Bild':' Bilder'):'',nTxt?nTxt+(nTxt===1?' Text':' Texte'):'',entry.templateName?'Vorlage: '+entry.templateName:''].filter(Boolean).join(' · ')||'leer';
     details.append(title,sub);
     const buttons=document.createElement('div'); buttons.className='dd-inline';
-    const ops=[['Vorschau',()=>{state.selected=i;state.textSelectedId=null;state.activeImageId="image";showQueue();renderTextControls();setImagePanel(activeImageLayer(state.queue[i]));showPreview()},false],['↑',()=>swap(i,i-1),i===0],['↓',()=>swap(i,i+1),i===total-1],['×',()=>{revokeEntry(state.queue[i]);state.queue.splice(i,1);if(i<state.selected)state.selected--;else if(state.selected>=state.queue.length)state.selected=state.queue.length-1;state.textSelectedId=null;state.activeImageId="image";showQueue();renderTextControls();showPreview()},false]];
-    for(const [label,action,disabled] of ops){const btn=document.createElement('button');btn.type='button';btn.textContent=label;btn.disabled=isBusy()||disabled;btn.onclick=action;buttons.append(btn);}    
+    const ops=[['↑','Nach oben',()=>swap(i,i-1),i===0],['↓','Nach unten',()=>swap(i,i+1),i===total-1],['🗑','Etikett entfernen',()=>{revokeEntry(state.queue[i]);state.queue.splice(i,1);if(i<state.selected)state.selected--;else if(state.selected>=state.queue.length)state.selected=state.queue.length-1;state.textSelectedId=null;state.activeImageId="image";showQueue();renderTextControls();setImagePanel(activeImageLayer(state.queue[state.selected]));showPreview()},false]];
+    for(const [label,title2,action,disabled] of ops){const btn=document.createElement('button');btn.type='button';btn.textContent=label;btn.title=title2;btn.setAttribute('aria-label',title2+': '+entry.name);btn.disabled=isBusy()||disabled;btn.onclick=action;buttons.append(btn);}
     row.append(im,details,buttons); root.append(row);
-  }); buttonState(); syncTemplateFields();renderTemplateLibrary();
+  }); buttonState(); syncTemplateFields();renderTemplateLibrary();scheduleThumbs();
 }
 function releaseDecodedImages(entry){
  for(const layer of [entry,...(entry?.images||[])]){
@@ -498,7 +557,7 @@ async function ensureImage(entry){
   return entry.imgPromise;
 }
 async function rasterizePdfPage(page, importMode){
-  const dpi = importMode==='original' ? 144 : Number(importMode)||201;
+  const dpi = importMode==='original' ? 144 : Number(importMode)||203;
   let scale = dpi/72; const base = page.getViewport({scale:1});
   if(![base.width,base.height].every(v=>Number.isFinite(v)&&v>0))throw Error('Ungültige PDF-Seitengröße');
   scale=Math.min(scale,8192/base.width,8192/base.height);
@@ -509,51 +568,115 @@ async function rasterizePdfPage(page, importMode){
   canvas.width=0; canvas.height=0; return blob;
 }
 function createImageLayer(blob,name,importMode){return {id:'img:'+Date.now().toString(36)+Math.random().toString(36).slice(2),kind:'image',blob,name,importDpi:importMode,locked:false,layouts:{},crop:{x:0,y:0,w:1,h:1,shape:'rect',preset:'free'}};}
+async function createEmptyLabelEntry(){
+ const canvas=document.createElement('canvas');canvas.width=canvas.height=2;
+ const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,2,2);
+ const blob=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error('Leeres Etikett konnte nicht erstellt werden')),'image/png'));
+ canvas.width=canvas.height=0;
+ return {kind:'blank',blob,name:'Etikett '+(state.queue.length+1),importDpi:'original',layouts:{},texts:[],images:[],layers:[],pageRotation:0};
+}
 async function addFiles(files,asLayersOverride=null){
  const input=Array.from(files||[]);if(!input.length||isBusy())return;
  const asLayers=asLayersOverride===null?$('dd-import-mode').value==='layers':Boolean(asLayersOverride);
  let target=state.queue[state.selected]||null;
- if(asLayers&&!target){message('Bitte zuerst ein Etikett erstellen.',true);return;}
  clearHistoryTimer();commitHistory();beginHistory('Dateien importieren');history.hold=true;state.importingFiles=true;refreshBusyUi();
- let added=0,skipped=0;const importMode=$('dd-importdpi').value,autoCrop=$('dd-crop-onimport').checked;
- const capacity=()=>asLayers?100-allImages(target).length:MAX_PAGES-state.queue.length;
+ let added=0,skipped=0;const failed=[];const importMode=$('dd-importdpi').value,autoCrop=$('dd-crop-onimport').checked;
+ const importedLayers=[];
+ const capacity=()=>asLayers?100-(target?allImages(target).length:0):MAX_PAGES-state.queue.length;
  const addBlob=async(blob,name,kind)=>{
-  let layer;if(capacity()<=0)throw Error('Maximal 100 Etiketten bzw. Bildebenen.');
-  if(asLayers){target.images||=[];layer=createImageLayer(blob,name,importMode);target.images.push(layer);layerOrder(target);state.activeImageId=layer.id;}
-  else{target={kind,blob,name,importDpi:importMode,layouts:{},texts:[],images:[],crop:{x:0,y:0,w:1,h:1,shape:'rect',preset:'free'}};state.queue.push(target);state.selected=state.queue.length-1;layer=target;state.activeImageId='image';}
-  state.textSelectedId=null;added++;showQueue();renderTextControls();setImagePanel(layer);await showPreview();if(autoCrop)await openCropEditor(layer);
+  if(capacity()<=0)throw Error('Maximal 100 Etiketten bzw. Bildebenen.');
+  let layer;
+  if(asLayers){
+   if(!target){
+    if(state.queue.length>=MAX_PAGES)throw Error('Die Warteschlange ist voll (maximal 100 Etiketten).');
+    target=await createEmptyLabelEntry();state.queue.push(target);state.selected=state.queue.length-1;
+   }
+   target.images||=[];
+   layer=createImageLayer(blob,name,importMode);
+   layer.initialStackIndex=allImages(target).length;
+   target.images.push(layer);
+   layerOrder(target);
+   state.activeImageId=layer.id;
+  }else{
+   target={kind,blob,name,importDpi:importMode,layouts:{},texts:[],images:[],crop:{x:0,y:0,w:1,h:1,shape:'rect',preset:'free'},pageRotation:0};
+   state.queue.push(target);state.selected=state.queue.length-1;
+   layer=target;state.activeImageId='image';
+  }
+  state.textSelectedId=null;importedLayers.push({entry:target,layer});added++;
  };
  try{
   for(const file of input){
    if(capacity()<=0){skipped++;continue;}
-   if(file.size>FILE_LIMIT){skipped++;message('Datei zu groß (max. 40 MB): '+file.name,true);continue;}
+   if(file.size>FILE_LIMIT){skipped++;failed.push(file.name+' (größer als 40 MB)');continue;}
    const ext=(file.name.split('.').pop()||'').toLowerCase();
    try{
     if(file.type==='application/pdf'||ext==='pdf'){
      const lib=await pdfLib(),task=lib.getDocument({data:new Uint8Array(await file.arrayBuffer()),isEvalSupported:false,useSystemFonts:false,standardFontDataUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/standard_fonts/',cMapUrl:'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',cMapPacked:true});
-     let doc;try{doc=await task.promise;const max=Math.min(doc.numPages,capacity());if(max<doc.numPages)skipped+=doc.numPages-max;
-      for(let n=1;n<=max;n++){const page=await doc.getPage(n);try{await addBlob(await rasterizePdfPage(page,importMode),file.name+' – Seite '+n,'pdf');}finally{page.cleanup();}}
+     try{
+      const doc=await task.promise,max=Math.min(doc.numPages,capacity());
+      if(max<doc.numPages)skipped+=doc.numPages-max;
+      for(let n=1;n<=max;n++){
+       const page=await doc.getPage(n);
+       try{await addBlob(await rasterizePdfPage(page,importMode),file.name+' – Seite '+n,'pdf');}
+       finally{page.cleanup();}
+      }
      }finally{await task.destroy();}
-    }else if(['png','jpg','jpeg'].includes(ext)||['image/png','image/jpeg'].includes(file.type)){await decodeBlob(file);await addBlob(file,file.name,'image');}
-    else{skipped++;message('Dateityp nicht unterstützt: '+file.name,true);}
-   }catch(e){skipped++;message('Datei konnte nicht verarbeitet werden: '+file.name+' – '+(e.message||e),true);}
+    }else if(['png','jpg','jpeg','webp','gif','heic','heif'].includes(ext)||/^image\/(png|jpeg|webp|gif|heic|heif)$/.test(file.type)){
+     const decoded=await decodeBlob(file);
+     let blob=file;
+     if(!['image/png','image/jpeg'].includes(file.type)){
+      // Store everything as PNG so templates stay portable between browsers.
+      const c=document.createElement('canvas');c.width=decoded.naturalWidth;c.height=decoded.naturalHeight;c.getContext('2d').drawImage(decoded,0,0);
+      blob=await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(Error('Bild konnte nicht umgewandelt werden')),'image/png'));c.width=c.height=0;
+     }
+     await addBlob(blob,file.name,'image');
+     if(/jpe?g|heic|heif/i.test(file.type||ext)){const last=importedLayers.at(-1)?.layer;if(last)imageAdjustments(last).mode='dither';}
+    }else{skipped++;failed.push(file.name+' (nur PDF, PNG, JPG)');}
+   }catch(e){skipped++;failed.push(file.name+' ('+(e.message||e)+')');}
   }
- }finally{history.hold=false;state.importingFiles=false;commitHistory();refreshBusyUi();showQueue();renderTextControls();setImagePanel(activeImageLayer(state.queue[state.selected]));requestPreview();}
- message(added+' Bilddatei(en)/PDF-Seite(n) hinzugefügt'+(skipped?' · '+skipped+' Datei(en)/Seite(n) übersprungen.':'.'),!!skipped);
+ }finally{
+  history.hold=false;state.importingFiles=false;commitHistory();refreshBusyUi();
+  showQueue();renderTextControls();setImagePanel(activeImageLayer(state.queue[state.selected]));requestPreview();
+ }
+ if(added){
+  message(added+(added===1?' Bild/Seite eingefügt':' Bilder/Seiten eingefügt')+(asLayers?' (als Ebenen auf einem Etikett).':' (je ein eigenes Etikett).')+(skipped?' Übersprungen: '+(failed.join(', ')||skipped+' Seite(n) – Grenze 100 erreicht')+'.':''),!!skipped);
+  // The crop dialog is interactive and cannot be used while the workspace is disabled for an import.
+  // Open it only after import has completed, keeping each crop as a separate undoable step.
+  if(autoCrop){
+   for(const {entry:owner,layer} of importedLayers){
+    const idx=state.queue.indexOf(owner);if(idx<0)continue;
+    state.selected=idx;state.textSelectedId=null;
+    state.activeImageId=owner===layer?'image':layer.id;
+    showQueue();renderTextControls();setImagePanel(layer);await showPreview();
+    await openCropEditor(layer);
+   }
+  }
+ }else if(skipped)message('Nicht importiert: '+(failed.join(', ')||skipped+' Datei(en)/Seite(n)')+'.',true);
 }
 function normalizedCrop(layer){return validNormalizedCrop(layer?.crop||{});}
 
+function sizeDpi(size){return Number(size?.dpi)||203;}
+function importDpiValue(layer){const v=Number(layer?.importDpi);return Number.isFinite(v)&&v>=50&&v<=1200?v:0;}
 function refSize(entry,img,size){
  const c=normalizedCrop(entry),w=img.naturalWidth*c.w,h=img.naturalHeight*c.h;
- if(entry.importDpi==='300'||entry.importDpi==='201'){
-  const dpi=Number(entry.importDpi);return {w:w*((size.dpi||201)/dpi),h:h*((size.dpi||201)/dpi)};
- }
+ const dpi=importDpiValue(entry);
+ if(dpi)return {w:w*(sizeDpi(size)/dpi),h:h*(sizeDpi(size)/dpi)};
  return {w,h};
 }
 
 function initLayout(entry,sizeInfo,img,mode){
   const ref=refSize(entry,img,sizeInfo.size); const fit=mode || $('dd-fit').value; let scale=(fit==='cover'?Math.max(sizeInfo.size.w_px/ref.w,sizeInfo.size.h_px/ref.h):Math.min(sizeInfo.size.w_px/ref.w,sizeInfo.size.h_px/ref.h));
-  if(!isFinite(scale)||scale<=0)scale=1; entry.layouts ||= {}; entry.layouts[sizeInfo.sizeKey]={tx:0,ty:0,scale,baseScale:scale,rotation:0,refW:ref.w,refH:ref.h}; return entry.layouts[sizeInfo.sizeKey];
+  if(!isFinite(scale)||scale<=0)scale=1;
+  // Subsequent images initially appear smaller and slightly offset instead of hiding every prior image.
+  // Their positions remain fully editable; this affects only the first automatic layout.
+  const stack=Math.max(0,Number(entry.initialStackIndex)||0);
+  let tx=0,ty=0;
+  if(stack>0&&fit!=='cover'){
+    const positions=[[.12,.10],[-.12,-.10],[.12,-.10],[-.12,.10]];
+    const [dx,dy]=positions[(stack-1)%positions.length];
+    scale*=.72;tx=sizeInfo.size.w_px*dx;ty=sizeInfo.size.h_px*dy;
+  }
+  entry.layouts ||= {}; entry.layouts[sizeInfo.sizeKey]={tx,ty,scale,baseScale:scale,rotation:0,refW:ref.w,refH:ref.h}; return entry.layouts[sizeInfo.sizeKey];
 }
 async function getLayout(entry,sizeInfo,modeIfInit){ const img=await ensureImage(entry); let layout=entry.layouts?.[sizeInfo.sizeKey]; const ref=refSize(entry,img,sizeInfo.size); if(!layout || Math.abs(layout.refW-ref.w)>.001 || Math.abs(layout.refH-ref.h)>.001) layout=initLayout(entry,sizeInfo,img,modeIfInit); return {img,layout}; }
 // The image and text are rasterized by the SAME function for screen and printer.
@@ -562,7 +685,7 @@ function normalizeAngle(a){ return (((Number(a)||0)+180)%360+360)%360-180; }
 function degrees(angle){ return (Number(angle)||0)*Math.PI/180; }
 function updateEditorViewport(size){
  const canvas=$('dd-editor'),wrap=$('dd-editorwrap');if(!canvas||!wrap)return;
- if($('dd-workspace')){canvas.style.height=Math.max(120,Math.round(wrap.clientHeight||240))+'px';return;}
+ if($('dd-workspace')){canvas.style.removeProperty('height');return;}
  const wrapW=Math.max(230,Math.round(wrap.clientWidth||canvas.clientWidth||320));
  const ratio=size?Math.max(.3,Math.min(2.9,size.h_px/size.w_px)):.75;
  const mobile=window.innerWidth<=520;
@@ -578,11 +701,12 @@ function editorSize(){
  const ctx=c.getContext('2d');ctx.setTransform(c.width/cssW,0,0,c.height/cssH,0,0);return {ctx,cssW,cssH};
 }
 function cropForViewport(cssW,cssH,size,viewZoom=1){
- const pad=Math.max(24,Math.round(Math.min(cssW,cssH)*.09));
- const fit=Math.max(.0001,Math.min(Math.max(1,cssW-2*pad)/size.w_px,Math.max(1,cssH-2*pad)/size.h_px));
- const previewScale=fit*.91*Math.max(.2,Math.min(2.5,Number(viewZoom)||1));
+ // Leaves room for the handles around the label and for the zoom buttons at the bottom.
+ const pad=Math.max(22,Math.round(Math.min(cssW,cssH)*.08)),bottom=44;
+ const fit=Math.max(.0001,Math.min(Math.max(1,cssW-2*pad)/size.w_px,Math.max(1,cssH-pad-Math.max(pad,bottom))/size.h_px));
+ const previewScale=fit*Math.max(.2,Math.min(4,Number(viewZoom)||1));
  const w=size.w_px*previewScale,h=size.h_px*previewScale;
- return {x:(cssW-w)/2,y:(cssH-h)/2,w,h,scale:previewScale};
+ return {x:(cssW-w)/2,y:(cssH-Math.max(pad,bottom)+pad-h)/2,w,h,scale:previewScale};
 }
 
 function rotatedPoint(cx,cy,dx,dy,deg){ const r=degrees(deg),co=Math.cos(r),si=Math.sin(r);return {x:cx+dx*co-dy*si,y:cy+dx*si+dy*co}; }
@@ -647,6 +771,8 @@ function selectLayer(id){
  const entry=state.queue[state.selected];if(!entry||layerLocked(entry,id))return;
  if(id==='image'||id.startsWith('img:'))setActiveImage(entry,id);
  else{state.textSelectedId=id;renderTextControls();requestPreview();}
+ // After selecting via the layers panel, arrow keys should immediately move it.
+ const canvas=$('dd-editor');if(canvas)requestAnimationFrame(()=>canvas.focus({preventScroll:true}));
 }
 function moveLayer(id,position){
  const entry=state.queue[state.selected];if(!entry||layerLocked(entry,id))return;const order=layerOrder(entry),i=order.indexOf(id);if(i<0)return;
@@ -656,10 +782,12 @@ function removeImageLayer(id){
  const entry=state.queue[state.selected];if(!entry||state.printing||layerLocked(entry,id))return;
  if(id==='image'){
    if(entry.objectUrl)URL.revokeObjectURL(entry.objectUrl);entry.objectUrl='';entry.kind='blank';entry.img=null;entry.imgPromise=null;entry.layouts={};
+   // Discard the original image bytes as well, including from subsequently exported templates.
+   entry.blob=dataURLToBlob('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAFklEQVR4nGP8//8/AwMDEwMDAwMDAwAkBgMB/DXemwAAAABJRU5ErkJggg==');
  }else{const idx=(entry.images||[]).findIndex(im=>im.id===id);if(idx<0)return;revokeEntry(entry.images[idx]);entry.images.splice(idx,1);}
  entry.layers=(entry.layers||[]).filter(x=>x!==id);
  if(state.activeImageId===id)state.activeImageId=allImages(entry).at(-1)?.id||'image';
- renderTextControls();setImagePanel(activeImageLayer(entry));requestPreview();
+ renderTextControls();setImagePanel(activeImageLayer(entry));showQueue();requestPreview();
 }
 function renderLayerControls(){
  const entry=state.queue[state.selected],root=$('dd-layers');if(!root)return;root.replaceChildren();if(!entry)return;
@@ -678,11 +806,12 @@ function renderLayerControls(){
   lock.onclick=()=>toggleLayerLock(id);
   row.append(title,lock,sel,up,down);
   if(im){const crop=document.createElement('button');crop.type='button';crop.textContent='✂';crop.title='Diese Bilddatei zuschneiden';crop.disabled=locked;crop.onclick=()=>{setActiveImage(entry,id);openCropEditor(im);};row.append(crop);
-  const remove=document.createElement('button');remove.type='button';remove.textContent='×';remove.title='Bildebene entfernen';remove.disabled=locked;remove.onclick=()=>removeImageLayer(id);row.append(remove);}
+  const remove=document.createElement('button');remove.type='button';remove.textContent='🗑 Entfernen';remove.title='Nur diese Bildebene entfernen, nicht das gesamte Etikett';remove.setAttribute('aria-label','Bildebene '+(im.name||entry.name)+' entfernen');remove.disabled=locked;remove.onclick=()=>removeImageLayer(id);row.append(remove);}
   root.append(row);
  });
  const active=activeImageLayer(entry);if($('dd-active-image'))$('dd-active-image').textContent=state.textSelectedId?'Aktiv: Textfeld':active?'Aktives Bild: '+(active.name||entry.name)+' · Bild- und Beschnittwerte gelten nur für diese Ebene':'Kein Bild ausgewählt';
  if($('dd-crop-image'))$('dd-crop-image').disabled=!active||state.printing||!!active.locked;
+ if($('dd-remove-selected-image'))$('dd-remove-selected-image').disabled=!active||isBusy()||!!active.locked;
 }
 
 function splitLinesByMode(ctx,text,maxWidth,spacing,mode){
@@ -832,37 +961,67 @@ function setImageAdjustValue(key,value,{preserveNumberFocus=false}={}){
 }
 function setImagePanel(entry){
  const values=entry?imageAdjustments(entry):ADJUST_DEFAULTS;
+ const disabled=!entry||!!entry.locked,mode=entry?layerPrintMode(entry):'default';
+ $('dd-bw').value=mode;$('dd-bw').disabled=disabled;$('dd-adjust-reset').disabled=disabled;
  for(const key of ADJUST_KEYS){
-   syncAdjustControl(key, values[key] ?? ADJUST_DEFAULTS[key]);
-   // No-op editing on an empty queue is confusing, so deactivate inputs until a label exists.
-   for(const el of [$('dd-'+key),$('dd-'+key+'-number'),$('dd-'+key+'-minus'),$('dd-'+key+'-plus')])el.disabled=!entry;
-   if(entry)syncAdjustControl(key, values[key] ?? ADJUST_DEFAULTS[key]);
+   syncAdjustControl(key,values[key]??ADJUST_DEFAULTS[key]);
+   // The threshold only matters for "eigene Schwelle"; it is dimmed otherwise.
+   const off=disabled||(key==='threshold'&&mode!=='bw');
+   for(const suffix of ['','-number','-minus','-plus'])$('dd-'+key+suffix).disabled=off;
+   if(!off)syncAdjustControl(key,values[key]??ADJUST_DEFAULTS[key]);
+   $('dd-'+key).closest('.dd-adjustitem')?.classList.toggle('dd-off',key==='threshold'&&mode!=='bw');
  }
- $('dd-bw').value=values.mode||'default';
- const disabled=!entry||!!entry.locked;
- $('dd-bw').disabled=disabled;$('dd-adjust-reset').disabled=disabled;
- for(const key of ADJUST_KEYS){for(const suffix of ['', '-number','-minus','-plus'])$('dd-'+key+suffix).disabled=disabled;if(!disabled)syncAdjustControl(key,values[key]??ADJUST_DEFAULTS[key]);}
-
 }
 function clamp01(v){return Math.max(0,Math.min(1,v));}
 function applyAdjustments(ctx,w,h,a){
- const img=ctx.getImageData(0,0,w,h),px=img.data;
+ // Tonal corrections only. The 1-bit conversion for the thermal printer happens later,
+ // at the final label resolution (see binarizeLayerCanvas / finalizeOneBit).
  const brightness=(Number(a.brightness)||0)/100, exposure=Math.pow(2,(Number(a.exposure)||0)/45),contrast=(Number(a.contrast)||0)/100;
  const black=(Number(a.blacks)||0)/100,white=(Number(a.whites)||0)/100,sat=1+(Number(a.saturation)||0)/100,gamma=Number(a.gamma)||1;
- const gray=a.mode==='gray',hard=a.mode==='bw',threshold=Number(a.threshold??160);
+ if(!brightness&&!contrast&&!black&&!white&&sat===1&&gamma===1&&exposure===1)return;
+ const img=ctx.getImageData(0,0,w,h),px=img.data;
+ const contrastFactor=contrast>=0?1+contrast*2:1/(1-contrast*2);
+ const adj=v=>{v=clamp01(v*exposure+brightness);
+   v=clamp01(.5+(v-.5)*contrastFactor);
+   v=clamp01(v-black*Math.pow(1-v,2)*.75+white*Math.pow(v,2)*.75);
+   return clamp01(Math.pow(v,1/gamma));};
+ const lut=new Uint8ClampedArray(256);for(let i=0;i<256;i++)lut[i]=Math.round(adj(i/255)*255);
  for(let i=0;i<px.length;i+=4){if(!px[i+3])continue;
    let r=px[i]/255,g=px[i+1]/255,b=px[i+2]/255;
-   const l=.2126*r+.7152*g+.0722*b;
-   r=clamp01(l+(r-l)*sat);g=clamp01(l+(g-l)*sat);b=clamp01(l+(b-l)*sat);
-   if(gray||hard){const v=.2126*r+.7152*g+.0722*b;r=g=b=v;}
-   const adj=v=>{v=clamp01(v*exposure+brightness);
-     v=clamp01(.5+(v-.5)*(contrast>=0?1+contrast*2:1/(1-contrast*2)));
-     v=clamp01(v-black*Math.pow(1-v,2)*.75+white*Math.pow(v,2)*.75);
-     return clamp01(Math.pow(v,1/gamma));};
-   r=adj(r);g=adj(g);b=adj(b);
-   if(hard){r=g=b=(.2126*r+.7152*g+.0722*b)*255<threshold?0:1;}
-   px[i]=Math.round(r*255);px[i+1]=Math.round(g*255);px[i+2]=Math.round(b*255);
+   if(sat!==1){const l=.2126*r+.7152*g+.0722*b;r=clamp01(l+(r-l)*sat);g=clamp01(l+(g-l)*sat);b=clamp01(l+(b-l)*sat);}
+   px[i]=lut[Math.round(r*255)];px[i+1]=lut[Math.round(g*255)];px[i+2]=lut[Math.round(b*255)];
  }
+ ctx.putImageData(img,0,0);
+}
+// ---- Thermal printer output: exactly what the driver will print ----
+// The Niimbot driver turns every pixel with luminance < 128 into a black dot. To make the
+// preview honest and photos printable, every image layer is converted to pure black/white
+// at label resolution: a fixed or custom threshold, or Floyd-Steinberg dithering for photos.
+function layerPrintMode(layer){const m=imageAdjustments(layer).mode;return m==='gray'?'dither':(['default','bw','dither'].includes(m)?m:'default');}
+function binarizeLayerCanvas(canvas,mode,threshold){
+ const w=canvas.width,h=canvas.height;if(!w||!h)return;
+ const ctx=canvas.getContext('2d',{willReadFrequently:true}),img=ctx.getImageData(0,0,w,h),px=img.data;
+ const thr=mode==='bw'?Math.max(0,Math.min(255,Number(threshold)||160)):128;
+ if(mode==='dither'){
+  const lum=new Float32Array(w*h),solid=new Uint8Array(w*h);
+  for(let i=0,p=0;p<lum.length;i+=4,p++){const a=px[i+3]/255;if(a<.5)continue;solid[p]=1;lum[p]=(.299*px[i]+.587*px[i+1]+.114*px[i+2])*a+255*(1-a);}
+  for(let y=0;y<h;y++){const ltr=!(y&1);
+   for(let k=0;k<w;k++){const x=ltr?k:w-1-k,p=y*w+x;if(!solid[p])continue;
+    const old=lum[p],nv=old<128?0:255,err=old-nv,d=ltr?1:-1;lum[p]=nv;
+    if(x+d>=0&&x+d<w&&solid[p+d])lum[p+d]+=err*7/16;
+    if(y+1<h){const q=p+w;if(x-d>=0&&x-d<w&&solid[q-d])lum[q-d]+=err*3/16;if(solid[q])lum[q]+=err*5/16;if(x+d>=0&&x+d<w&&solid[q+d])lum[q+d]+=err/16;}
+   }}
+  for(let i=0,p=0;p<lum.length;i+=4,p++){if(!solid[p]){px[i+3]=0;continue;}const v=lum[p]<128?0:255;px[i]=px[i+1]=px[i+2]=v;px[i+3]=255;}
+ }else{
+  for(let i=0;i<px.length;i+=4){const a=px[i+3]/255;if(a<.5){px[i+3]=0;continue;}
+   const l=(.299*px[i]+.587*px[i+1]+.114*px[i+2])*a+255*(1-a),v=l<thr?0:255;px[i]=px[i+1]=px[i+2]=v;px[i+3]=255;}
+ }
+ ctx.putImageData(img,0,0);
+}
+function finalizeOneBit(canvas){
+ // Same rule as niimbot.js imageToPacked(): luminance < 128 prints black.
+ const ctx=canvas.getContext('2d',{willReadFrequently:true}),img=ctx.getImageData(0,0,canvas.width,canvas.height),px=img.data;
+ for(let i=0;i<px.length;i+=4){const v=(.299*px[i]+.587*px[i+1]+.114*px[i+2])<128?0:255;px[i]=px[i+1]=px[i+2]=v;px[i+3]=255;}
  ctx.putImageData(img,0,0);
 }
 function drawImageAtLayout(ctx,img,layout,pxPerLabel=1,view=null,layer=null){
@@ -892,18 +1051,19 @@ function rasterizeImageLayer(layer,sizeInfo,img,layout){
  const c=document.createElement('canvas');c.width=Math.round(sizeInfo.size.w_px);c.height=Math.round(sizeInfo.size.h_px);
  drawImageAtLayout(c.getContext('2d'),adjustedSource(layer,img),layout,1,null,{crop:{x:0,y:0,w:1,h:1,shape:normalizedCrop(layer).shape}});return c;
 }
-async function renderLabelCanvas(entry,baseSizeInfo,{physical=false}={}){
+async function renderLabelCanvas(entry,baseSizeInfo,{physical=false,oneBit=false}={}){
  const sizeInfo=effectiveSizeInfo(entry,baseSizeInfo),{size}=sizeInfo;validateSize(size);const canvas=document.createElement('canvas');canvas.width=Math.round(size.w_px);canvas.height=Math.round(size.h_px);
  if(canvas.width*canvas.height>12_000_000)throw Error('Etikett ist zu groß (max. 12 Millionen Pixel)');
- const ctx=canvas.getContext('2d',{alpha:false});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
+ const ctx=canvas.getContext('2d',{alpha:false,willReadFrequently:oneBit});ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);
  for(const id of layerOrder(entry)){
    const layer=imageForId(entry,id);
-   if(layer){const {img,layout}=await getLayout(layer,sizeInfo);const raster=rasterizeImageLayer(layer,sizeInfo,img,layout);ctx.drawImage(raster,0,0);raster.width=raster.height=0;}
+   if(layer){const {img,layout}=await getLayout(layer,sizeInfo);const raster=rasterizeImageLayer(layer,sizeInfo,img,layout);if(oneBit)binarizeLayerCanvas(raster,layerPrintMode(layer),imageAdjustments(layer).threshold);ctx.drawImage(raster,0,0);raster.width=raster.height=0;}
    else{const t=(entry.texts||[]).find(t=>t.id===id);if(t)drawTextItem(ctx,t,canvas.width);}
  }
+ if(oneBit)finalizeOneBit(canvas);
  if(!physical || entry.pageRotation!==90)return canvas;
  const out=document.createElement('canvas');out.width=Math.round(baseSizeInfo.size.w_px);out.height=Math.round(baseSizeInfo.size.h_px);
- const octx=out.getContext('2d',{alpha:false});octx.fillStyle='#fff';octx.fillRect(0,0,out.width,out.height);octx.save();octx.translate(out.width/2,out.height/2);octx.rotate(Math.PI/2);octx.drawImage(canvas,-canvas.width/2,-canvas.height/2);octx.restore();canvas.width=canvas.height=0;return out;
+ const octx=out.getContext('2d',{alpha:false});octx.fillStyle='#fff';octx.fillRect(0,0,out.width,out.height);octx.imageSmoothingEnabled=false;octx.save();octx.translate(out.width/2,out.height/2);octx.rotate(Math.PI/2);octx.drawImage(canvas,-canvas.width/2,-canvas.height/2);octx.restore();canvas.width=canvas.height=0;return out;
 }
 
 let previewFrame=0;
@@ -924,6 +1084,14 @@ function setPreviewZoomUi(){ const el=$('dd-viewzoom'),out=$('dd-viewzoom-value'
 function drawImageOutsidePrintArea(ctx,img,layout,crop,layer){
  drawImageAtLayout(ctx,adjustedSource(layer,img),layout,crop.scale,crop,{crop:{x:0,y:0,w:1,h:1,shape:normalizedCrop(layer).shape}});
 }
+function drawCenteredHint(ctx,lines,box){
+ ctx.save();ctx.fillStyle='#64748b';ctx.textAlign='center';ctx.textBaseline='middle';
+ let fs=14;const maxW=Math.max(40,box.w-16);
+ const widest=()=>{ctx.font=fs+'px system-ui,sans-serif';return Math.max(...lines.map(l=>ctx.measureText(l).width));};
+ while(fs>8&&widest()>maxW)fs--;
+ const lh=fs*1.35,top=box.y+box.h/2-(lines.length-1)*lh/2;
+ lines.forEach((l,i)=>ctx.fillText(l,box.x+box.w/2,top+i*lh));ctx.restore();
+}
 let previewRunning=null,previewAgain=false;
 function showPreview(){
  if(previewRunning){previewAgain=true;return previewRunning;}
@@ -934,8 +1102,29 @@ async function paintPreview(){
  const version=++state.previewVersion;
  const entry=state.queue[state.selected];
  updateTemplateUiState();
- if(!entry){updateEditorViewport(null);const {ctx,cssW,cssH}=editorSize();ctx.fillStyle='#e9eef5';ctx.fillRect(0,0,cssW,cssH);ctx.fillStyle='#64748b';ctx.font='15px sans-serif';ctx.textAlign='center';ctx.fillText('Datei oder leeres Etikett hinzufügen',cssW/2,cssH/2);$('dd-preview-title').textContent='Ausschnitt & Druckvorschau';state.editor.crop=null;state.editor.entry=null;state.editor.imageHandle=null;state.editor.textHandles=null;return;}
- $('dd-preview-title').textContent='Ausschnitt & Druckvorschau: '+entry.name+(entry.pageRotation===90?' · 90°':'');
+ if(!entry){
+  // A selected roll defines the red print region, independent of imported artwork.
+  state.editor.entry=null;state.editor.imageHandle=null;state.editor.textHandles=null;
+  let sizeInfo=null;
+  try{if(loaded()){if(!state.registry)await upstreamRegistry();sizeInfo=readSize();}}catch(e){console.warn('[dragdrop] Etikett-Rahmen noch nicht verfügbar:',e.message||e);}
+  if(version!==state.previewVersion)return;
+  updateEditorViewport(sizeInfo?.size||null);
+  const {ctx,cssW,cssH}=editorSize();ctx.fillStyle='#d9dee7';ctx.fillRect(0,0,cssW,cssH);
+  if(!sizeInfo){
+   state.editor.crop=null;state.editor.sizeInfo=null;
+   drawCenteredHint(ctx,['Bitte oben Drucker','und Etikettgröße wählen'],{x:0,y:0,w:cssW,h:cssH});
+   $('dd-preview-title').textContent='Druckbereich – Etikett auswählen';return;
+  }
+  const crop=cropForViewport(cssW,cssH,sizeInfo.size,state.viewZoom);
+  state.editor.crop=crop;state.editor.sizeInfo=sizeInfo;
+  ctx.fillStyle='#fff';ctx.fillRect(crop.x,crop.y,crop.w,crop.h);
+  ctx.save();ctx.strokeStyle='#f43f5e';ctx.lineWidth=2.5;ctx.setLineDash([6,5]);ctx.strokeRect(crop.x,crop.y,crop.w,crop.h);ctx.restore();
+  drawCenteredHint(ctx,['Leeres Etikett','Bild oder Text hinzufügen'],crop);
+  const mm=(Number(sizeInfo.size.w_mm)||0)+' × '+(Number(sizeInfo.size.h_mm)||0)+' mm';
+  $('dd-preview-title').textContent='Druckbereich '+(sizeInfo.size.w_mm&&sizeInfo.size.h_mm?mm:'');
+  setPreviewZoomUi();return;
+ }
+ $('dd-preview-title').textContent=(state.queue.length>1?(state.selected+1)+'/'+state.queue.length+' · ':'')+entry.name+(entry.pageRotation===90?' · 90°':'');
  try{
   if(!state.registry)await upstreamRegistry();
   const baseSizeInfo=readSize();
@@ -949,16 +1138,22 @@ async function paintPreview(){
   ctx.fillStyle='#d9dee7';ctx.fillRect(0,0,cssW,cssH);
   ctx.fillStyle='#fff';ctx.fillRect(crop.x,crop.y,crop.w,crop.h);
   if(state.showOutsideBounds){
+    // Parts outside the print area are shown faded; inside, the exact label is drawn.
+    ctx.save();ctx.globalAlpha=.38;
     for(const id of layerOrder(entry)){
       const layer=imageForId(entry,id);
       if(layer){const {img,layout}=await getLayout(layer,sizeInfo);drawImageOutsidePrintArea(ctx,img,layout,crop,layer);}
       else {const t=(entry.texts||[]).find(t=>t.id===id);if(t){ctx.save();ctx.translate(crop.x,crop.y);ctx.scale(crop.scale,crop.scale);drawTextItem(ctx,t,sizeInfo.size.w_px);ctx.restore();}}
     }
-  }else{
-    const label=await renderLabelCanvas(entry,baseSizeInfo);
-    if(version!==state.previewVersion){label.width=label.height=0;return;}
-    ctx.drawImage(label,crop.x,crop.y,crop.w,crop.h);label.width=label.height=0;
+    ctx.restore();
   }
+  const label=await renderLabelCanvas(entry,baseSizeInfo,{oneBit:state.printView});
+  if(version!==state.previewVersion){label.width=label.height=0;return;}
+  if(state.printView&&!state.editor.pointers.size)storeThumb(entry,label);
+  ctx.save();
+  // 1-bit preview: crisp dots when enlarged, smooth (grey-looking) when reduced.
+  ctx.imageSmoothingEnabled=!(state.printView&&crop.scale*(window.devicePixelRatio||1)>=1.5);ctx.imageSmoothingQuality='high';
+  ctx.drawImage(label,crop.x,crop.y,crop.w,crop.h);ctx.restore();label.width=label.height=0;
   ctx.save();ctx.strokeStyle='#f43f5e';ctx.lineWidth=2.5;ctx.setLineDash([6,5]);ctx.strokeRect(crop.x,crop.y,crop.w,crop.h);ctx.restore();
   if(state.showOutsideBounds){
    const gc=$('dd-editor').getContext('2d');
@@ -1005,12 +1200,13 @@ async function runPrintJob(entriesForJob,copies){
  state.printing=true;state.stop=false;$('dd-progress').value=0;refreshBusyUi();showQueue();
  try{
   await upstreamRegistry();const sizeInfo=snapshotClone(readSize()),{model,size,density,sizeKey}=sizeInfo;
-  if(!Niimbot.isSupported())throw Error('Dieser Browser stellt kein Web Bluetooth bereit.');
-  if(!Niimbot.printer)throw Error('Bitte zuerst oben den Drucker verbinden.');
-  if(Number(Niimbot.printer.modelId)!==Number(model.id))throw Error('Verbundenes Modell passt nicht zur Auswahl.');
+  const notReady=text=>Object.assign(Error(text),{beforePrint:true});
+  if(!Niimbot.isSupported())throw notReady('Dieser Browser kann kein Bluetooth. Auf dem iPhone die Seite in Bluefy öffnen, am Computer Chrome oder Edge verwenden.');
+  if(!Niimbot.printer)throw notReady('Bitte zuerst den Drucker verbinden („🔗 Verbinden“).');
+  if(Number(Niimbot.printer.modelId)!==Number(model.id))throw notReady('Der verbundene Drucker ('+(Niimbot.printer.label||'?')+') passt nicht zum gewählten Modell. Bitte Modell anpassen oder neu verbinden.');
   const entries=await entriesForJob(),total=entries.length*copies;let completed=0;
   for(const entry of entries){
-   if(state.stop)break;const canvas=await renderLabelCanvas(entry,sizeInfo,{physical:true});const url=canvas.toDataURL('image/png');canvas.width=canvas.height=0;releaseDecodedImages(entry);
+   if(state.stop)break;const canvas=await renderLabelCanvas(entry,sizeInfo,{physical:true,oneBit:true});const url=canvas.toDataURL('image/png');canvas.width=canvas.height=0;releaseDecodedImages(entry);
    for(let n=0;n<copies;n++){
     if(state.stop)break;message('Drucke '+(completed+1)+' von '+total+' …');
     await Niimbot.printImage(url,{model,size,density,onProgress:s=>{if(s!=='ok')$('dd-state').textContent='Druckstatus: '+String(s);}});
@@ -1019,7 +1215,7 @@ async function runPrintJob(entriesForJob,copies){
   }
   if(state.stop)message('Druck angehalten: '+completed+' von '+total+' Etiketten bestätigt.');
   else{await learnRollAfterPrint(size,sizeKey);message('Fertig: '+completed+' Etikett(en) bestätigt.');}
- }catch(e){message('Druckfehler: '+(e.message||e)+' · Bitte Papier prüfen; ein Etikett kann bereits ausgegeben worden sein.',true);}
+ }catch(e){message(e.beforePrint?(e.message||String(e)):'Druckfehler: '+(e.message||e)+' · Bitte Papier und Deckel prüfen; ein Etikett kann bereits ausgegeben worden sein.',true);if(e.beforePrint&&!isDesktopLayout()&&!Niimbot.printer)setPrinterCollapsed(true);}
  finally{state.printing=false;refreshBusyUi();showQueue();renderTextControls();setImagePanel(activeImageLayer(state.queue[state.selected]));}
 }
 function currentEntryAndLayout(){if(state.selected<0||state.selected>=state.queue.length)return null;try{const entry=state.queue[state.selected],sizeInfo=effectiveSizeInfo(entry,readSize());return {entry,sizeInfo};}catch{return null;}}
@@ -1032,6 +1228,67 @@ async function modifyLayout(fn){
 function alignHorizontal(mode){const selected=selectedText();if(selected){if(selected.locked)return;const cur=currentEntryAndLayout();if(!cur)return;const ctx=$('dd-editor').getContext('2d'),g=textGeometry(ctx,selected,cur.sizeInfo.size.w_px);const a=degrees(selected.rotation),ts=textScale(selected),bw=ts*(Math.abs(g.boxWidth*Math.cos(a))+Math.abs(g.boxHeight*Math.sin(a)));selected.x=mode==='left'?bw/2:mode==='right'?cur.sizeInfo.size.w_px-bw/2:cur.sizeInfo.size.w_px/2;renderTextControls();requestPreview();return;}modifyLayout((l,s)=>{const a=degrees(l.rotation),w=l.refW*l.scale,h=l.refH*l.scale,bw=Math.abs(w*Math.cos(a))+Math.abs(h*Math.sin(a));l.tx=mode==='left'?(bw-s.size.w_px)/2:mode==='right'?(s.size.w_px-bw)/2:0;});}
 function alignVertical(mode){const selected=selectedText();if(selected){if(selected.locked)return;const cur=currentEntryAndLayout();if(!cur)return;const ctx=$('dd-editor').getContext('2d'),g=textGeometry(ctx,selected,cur.sizeInfo.size.w_px);const a=degrees(selected.rotation),ts=textScale(selected),bh=ts*(Math.abs(g.boxHeight*Math.cos(a))+Math.abs(g.boxWidth*Math.sin(a)));selected.y=mode==='top'?bh/2:mode==='bottom'?cur.sizeInfo.size.h_px-bh/2:cur.sizeInfo.size.h_px/2;renderTextControls();requestPreview();return;}modifyLayout((l,s)=>{const a=degrees(l.rotation),w=l.refW*l.scale,h=l.refH*l.scale,bh=Math.abs(h*Math.cos(a))+Math.abs(w*Math.sin(a));l.ty=mode==='top'?(bh-s.size.h_px)/2:mode==='bottom'?(s.size.h_px-bh)/2:0;});}
 function nudge(dx,dy){const selected=selectedText();if(selected){if(selected.locked)return;const cur=currentEntryAndLayout();if(!cur)return;const step=Math.max(1,Math.round(cur.sizeInfo.size.dpi/25.4));selected.x+=dx*step;selected.y+=dy*step;renderTextControls();requestPreview();return;}modifyLayout((l,s)=>{const step=Math.max(1,Math.round(s.size.dpi/25.4));l.tx+=dx*step;l.ty+=dy*step;});}
+// Arrow-key editing is opt-in for controls that own the keyboard: focused sliders
+// and number inputs edit their own values. Otherwise arrows nudge the selected
+// layer, including text layers selected from the layer list or preview.
+function nudgeSelectedWithKeyboard(dx,dy){
+ const cur=currentEntryAndLayout();if(!cur||isBusy()||state.cropState)return false;
+ const text=selectedText();
+ if(text){
+  if(text.locked)return false;
+  beginHistory('Textfeld mit Pfeiltasten verschieben');
+  text.x=(Number(text.x)||0)+dx;text.y=(Number(text.y)||0)+dy;
+  // Text coordinates and preview are updated immediately, without stealing focus.
+  if($('dd-textx')&&document.activeElement!==$('dd-textx'))$('dd-textx').value=String(Math.round(text.x*100)/100);
+  if($('dd-texty')&&document.activeElement!==$('dd-texty'))$('dd-texty').value=String(Math.round(text.y*100)/100);
+  requestPreview();scheduleHistoryCommit(460);return true;
+ }
+ const image=activeImageLayer(cur.entry);
+ if(!image||image.locked)return false;
+ beginHistory('Bildebene mit Pfeiltasten verschieben');
+ // The layout may be initialized asynchronously after importing an image.
+ getLayout(image,cur.sizeInfo).then(({layout})=>{
+  if(isBusy())return;
+  layout.tx=(Number(layout.tx)||0)+dx;
+  layout.ty=(Number(layout.ty)||0)+dy;
+  requestPreview();scheduleHistoryCommit(460);
+ }).catch(e=>message('Verschieben nicht möglich: '+(e.message||e),true));
+ return true;
+}
+function keyboardStepControl(control,direction,multiplier){
+ if(control.disabled||control.readOnly)return;
+ const min=control.min!==''?Number(control.min):-Infinity;
+ const max=control.max!==''?Number(control.max):Infinity;
+ const stepRaw=Number(control.step);const step=Number.isFinite(stepRaw)&&stepRaw>0?stepRaw:1;
+ const current=control.value!==''&&Number.isFinite(Number(control.value))?Number(control.value):(Number.isFinite(min)?min:0);
+ const precision=(String(step).split('.')[1]||'').length;
+ const target=Math.round((current+direction*step*multiplier)*1e6)/1e6;
+ const clamped=Math.max(min,Math.min(max,target));
+ const value=String(Number(clamped.toFixed(Math.max(precision+2,4))));
+ if(value===control.value)return;
+ control.value=value;
+ control.dispatchEvent(new Event('input',{bubbles:true}));
+ control.dispatchEvent(new Event('change',{bubbles:true}));
+}
+document.addEventListener('keydown',event=>{
+ if(!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)||event.defaultPrevented||event.isComposing||isBusy()||event.ctrlKey||event.metaKey)return;
+ const target=event.target;
+ if(!(target instanceof Element)||!target.closest('#dd-addon'))return;
+ // Browser-native select controls, the tab strip and resize grip own the arrows.
+ if(target.closest('#dd-tabstrip,.dd-gripbar,[contenteditable="true"]'))return;
+ if(target.matches('input[type="number"],input[type="range"]')){
+  if(target.type==='number'&&(event.key==='ArrowLeft'||event.key==='ArrowRight'))return; // Allow editing digits.
+  const direction=(event.key==='ArrowUp'||event.key==='ArrowRight')?1:-1;
+  event.preventDefault();keyboardStepControl(target,direction,event.shiftKey?10:(event.altKey?0.25:1));
+  return;
+ }
+ if(target.closest('input,textarea,select,button,a,[role="slider"]'))return;
+ const delta=event.altKey?0.25:(event.shiftKey?10:1);
+ const dx=(event.key==='ArrowLeft'?-delta:event.key==='ArrowRight'?delta:0);
+ const dy=(event.key==='ArrowUp'?-delta:event.key==='ArrowDown'?delta:0);
+ if(nudgeSelectedWithKeyboard(dx,dy))event.preventDefault();
+});
+
 async function doReset(mode){
  const current=currentEntryAndLayout();if(!current)return;
  const selected=selectedText();
@@ -1336,9 +1593,7 @@ function addText(){const cur=currentEntryAndLayout();if(!cur){message('Bitte zue
 async function blankLabel(){
  if(isBusy())return;if(state.queue.length>=MAX_PAGES){message('Maximal 100 Etiketten pro Auftrag.',true);return;}
  clearHistoryTimer();commitHistory();beginHistory('Leeres Etikett');history.hold=true;state.creatingLabel=true;refreshBusyUi();
- try{const c=document.createElement('canvas');c.width=c.height=2;const ctx=c.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,2,2);
- const blob=await new Promise((resolve,reject)=>c.toBlob(b=>b?resolve(b):reject(Error('Leeres Etikett konnte nicht erstellt werden')),'image/png'));
- state.queue.push({kind:'blank',blob,name:'Leeres Etikett '+(state.queue.length+1),importDpi:'original',layouts:{},texts:[],images:[],pageRotation:0});state.selected=state.queue.length-1;state.textSelectedId=null;state.activeImageId='image';
+ try{const entry=await createEmptyLabelEntry();entry.name='Leeres Etikett '+(state.queue.length+1);state.queue.push(entry);state.selected=state.queue.length-1;state.textSelectedId=null;state.activeImageId='image';
  }catch(e){message(e.message,true);}finally{history.hold=false;state.creatingLabel=false;commitHistory();refreshBusyUi();showQueue();setImagePanel(activeImageLayer(state.queue[state.selected]));requestPreview();renderTextControls();}
 }
 function duplicateText(){const t=selectedText(),entry=state.queue[state.selected];if(!t||t.locked)return;const copy={...t,id:newText().id,x:t.x+10,y:t.y+10};entry.texts.push(copy);layerOrder(entry);state.textSelectedId=copy.id;renderTextControls();requestPreview();}
@@ -1347,10 +1602,10 @@ function wireTextEditor(){const textfields={'dd-textcontent':'text','dd-font':'f
  for(const [id,key] of Object.entries(textfields))$(id).addEventListener(id==='dd-font'||id==='dd-textscaling'||id==='dd-textalign'?'change':'input',e=>{const t=selectedText();if(!t||t.locked)return;let val=e.target.value;if(key==='autoFit')val=val==='fit';else if(['size','widthPct','boxW','boxH','x','y','letterSpace','lineHeight','rotation'].includes(key)){if(val===''||!Number.isFinite(Number(val)))return;val=Number(val);if(e.target.min!=='')val=Math.max(Number(e.target.min),val);if(e.target.max!=='')val=Math.min(Number(e.target.max),val);}t[key]=val;if(key==='boxW'){t.boxW=Math.max(20,val/textScale(t));const cur=currentEntryAndLayout();if(cur)t.widthPct=Math.round(val*100/cur.sizeInfo.size.w_px);}
   if(key==='boxH')t.boxH=Math.max(20,val/textScale(t));
   if(key==='rotation'){t.rotation=normalizeAngle(val);syncTextTransformFields(t);}
-  if(key==='widthPct'){const cur=currentEntryAndLayout();if(cur)t.boxW=Math.round(cur.sizeInfo.size.w_px*val/(100*textScale(t)));}requestPreview();if(key==='text')renderTextListOnly();});
+  if(key==='widthPct'){const cur=currentEntryAndLayout();if(cur)t.boxW=Math.round(cur.sizeInfo.size.w_px*val/(100*textScale(t)));}requestPreview();if(key==='text'){renderTextListOnly();renderLayerControls();}});
  for(const [id,key] of [['dd-textbold','bold'],['dd-textitalic','italic'],['dd-textunderline','underline'],['dd-textstrike','strike']])$(id).onclick=()=>{const t=selectedText();if(!t||t.locked)return;t[key]=!t[key];renderTextControls();requestPreview();};
  $('dd-textinverse').onchange=e=>{const t=selectedText();if(t&&!t.locked){t.inverse=e.target.checked;requestPreview();}};
- function setTextFlow(flow){const t=selectedText();if(!t||t.locked)return;t.flow=flow;if(flow==='curve'){t.curveDeg=Math.abs(normalizeCurveDeg(t.curveDeg));t.curvePlacement=curvePlacement(t);t.curveFacing=curveFacing(t);t.curveRadius=Math.max(0,Number(t.curveRadius)||0);if(!t.boxW)t.boxW=220;if(!t.boxH||t.boxH<t.boxW*.7)t.boxH=Math.max(Math.min(4000,t.boxW),t.boxH||0);}renderTextControls();requestPreview();}
+ function setTextFlow(flow){const t=selectedText();if(!t||t.locked)return;if(flow==='curve'&&textFlow(t)!=='curve'){t.curveDeg=Math.abs(normalizeCurveDeg(t.curveDeg));t.curvePlacement=curvePlacement(t);t.curveFacing=curveFacing(t);t.curveRadius=Math.max(0,Number(t.curveRadius)||0);const cur=currentEntryAndLayout();const d=cur?Math.round(Math.min(cur.sizeInfo.size.w_px,cur.sizeInfo.size.h_px)*.92/textScale(t)):220;t.boxW=t.boxH=Math.max(40,d);if(cur){t.x=cur.sizeInfo.size.w_px/2;t.y=cur.sizeInfo.size.h_px/2;}}t.flow=flow;renderTextControls();requestPreview();}
  function setCurvePlacement(place){const t=selectedText();if(!t||t.locked)return;t.curvePlacement=place;renderTextControls();requestPreview();}
  function setCurveFacing(facing){const t=selectedText();if(!t||t.locked)return;t.curveFacing=facing;renderTextControls();requestPreview();}
  function duplicateCurveOpposite(){const t=selectedText(),entry=state.queue[state.selected];if(!t||t.locked||textFlow(t)!=='curve'||!entry)return;const copy={...t,id:newText().id,x:t.x,y:t.y,curvePlacement:curvePlacement(t)==='top'?'bottom':curvePlacement(t)==='bottom'?'top':'circle'};entry.texts.push(copy);layerOrder(entry);state.textSelectedId=copy.id;renderTextControls();requestPreview();}
@@ -1399,15 +1654,18 @@ function wireAdditionalControls(){
     });
   }
  }
- $('dd-bw').addEventListener('change',e=>{const layer=activeImageLayer(state.queue[state.selected]);if(layer&&!layer.locked)imageAdjustments(layer).mode=e.target.value;requestPreview();});
+ $('dd-bw').addEventListener('change',e=>{const layer=activeImageLayer(state.queue[state.selected]);if(layer&&!layer.locked){imageAdjustments(layer).mode=e.target.value;if(!state.printView)message('Hinweis: Der Druckmodus ist nur in der Druckansicht sichtbar (Knopf oben in der Vorschau).');}setImagePanel(layer);requestPreview();});
  $('dd-adjust-reset').onclick=()=>{const layer=activeImageLayer(state.queue[state.selected]);if(!layer||layer.locked)return;layer.adjustments={...ADJUST_DEFAULTS};setImagePanel(layer);requestPreview();};
 }
 function renderTextListOnly(){const sel=state.textSelectedId;const entries=state.queue[state.selected]?.texts||[];const root=$('dd-textlist');root.replaceChildren();entries.forEach((t,i)=>{const b=document.createElement('button');b.type='button';b.textContent=`${i+1}: `+t.text.replace(/\s+/g,' ').slice(0,22);b.setAttribute('aria-pressed',t.id===sel?'true':'false');b.disabled=!!t.locked;b.onclick=()=>{if(t.locked)return;state.textSelectedId=t.id;renderTextControls();requestPreview();};root.append(b);});}
 // Compact viewport zoom scales ONLY the canvas presentation, never the printed label.
-for(const [id,direction] of [['dd-viewzoom-plus',1],['dd-viewzoom-minus',-1]]){
- $(id).addEventListener('click',()=>{state.viewZoom=Math.max(.2,Math.min(2.5,state.viewZoom+direction*.1));$('dd-viewzoom').value=String(Math.round(state.viewZoom*100));setPreviewZoomUi();requestPreview();});
+for(const [id,factor] of [['dd-viewzoom-plus',1.25],['dd-viewzoom-minus',1/1.25]]){
+ $(id).addEventListener('click',()=>{state.viewZoom=Math.max(.2,Math.min(4,state.viewZoom*factor));if(Math.abs(state.viewZoom-1)<.04)state.viewZoom=1;$('dd-viewzoom').value=String(Math.round(state.viewZoom*100));setPreviewZoomUi();requestPreview();});
 }
-$('dd-add-layer').addEventListener('click',()=>{if(state.queue[state.selected])$('dd-layer-files').click();else message('Zuerst ein Etikett erstellen oder eine Datei normal importieren.',true);});
+const resetViewZoom=()=>{state.viewZoom=1;setPreviewZoomUi();requestPreview();};
+$('dd-viewzoom-value').addEventListener('click',resetViewZoom);
+$('dd-viewzoom-value').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();resetViewZoom();}});
+$('dd-add-layer').addEventListener('click',()=>$('dd-layer-files').click());
 $('dd-layer-files').addEventListener('change',e=>{const f=[...e.target.files];e.target.value='';addFiles(f,true);});
 $('dd-crop-image').addEventListener('click',()=>{const layer=activeImageLayer(state.queue[state.selected]);if(layer)openCropEditor(layer);});
 
@@ -1418,12 +1676,13 @@ $('dd-drop').addEventListener('dragover',e=>{e.preventDefault();$('dd-drop').cla
 $('dd-drop').addEventListener('dragleave',()=>{$('dd-drop').classList.remove('drag')});
 $('dd-drop').addEventListener('drop',e=>{e.preventDefault();$('dd-drop').classList.remove('drag');addFiles(e.dataTransfer.files)});
 $('dd-files').addEventListener('change',e=>{const files=Array.from(e.target.files);e.target.value='';addFiles(files)});
+$('dd-import-mode').addEventListener('change',e=>{$('dd-import-mode-hint').textContent=e.target.value==='layers'?'Alle importierten Bilder/PDF-Seiten kommen als einzelne Ebenen auf das aktuell gewählte Etikett. Falls noch keines existiert, wird eines automatisch erstellt.':'Jede importierte Datei bzw. PDF-Seite wird ein eigenes Etikett in der Druckwarteschlange.';});
 $('dd-clear').addEventListener('click',()=>{if(isBusy())return;beginHistory('Warteschlange leeren'); state.queue.forEach(revokeEntry); state.queue.length=0; state.selected=-1; state.textSelectedId=null;state.activeImageId="image"; showQueue(); renderTextControls(); showPreview(); $('dd-progress').value=0; commitHistory();message('Warteschlange geleert.')});
 $('dd-print').addEventListener('click',printAll); $('dd-stop').addEventListener('click',()=>{state.stop=true; message('Stopp angefordert. Das laufende Etikett wird noch beendet.')});
 $('dd-fit').addEventListener('change',()=>doReset($('dd-fit').value));
 
 $('dd-copies').addEventListener('change',showQueue);
-$('dd-viewzoom').addEventListener('input',e=>{state.viewZoom=Math.max(.2,Math.min(2.5,Number(e.target.value||100)/100));setPreviewZoomUi();requestPreview();});
+$('dd-viewzoom').addEventListener('input',e=>{state.viewZoom=Math.max(.2,Math.min(4,Number(e.target.value||100)/100));setPreviewZoomUi();requestPreview();});
 for(const id of ['model','size','density'])$(id).addEventListener('change',handleSizeChange);
 function applyActiveZoom(percent){
  if(String(percent).trim()===''||!Number.isFinite(Number(percent)))return;percent=Math.max(5,Math.min(4000,Number(percent)));
@@ -1445,12 +1704,38 @@ $('dd-rotate90').onclick=()=>{
  else modifyLayout(l=>{l.rotation=normalizeAngle((l.rotation||0)+90);});
 };
 for(const [id,func] of [['dd-align-left',()=>alignHorizontal('left')],['dd-align-center-x',()=>alignHorizontal('center')],['dd-align-right',()=>alignHorizontal('right')],['dd-align-top',()=>alignVertical('top')],['dd-align-center-y',()=>alignVertical('middle')],['dd-align-bottom',()=>alignVertical('bottom')],['dd-nudge-up',()=>nudge(0,-1)],['dd-nudge-down',()=>nudge(0,1)],['dd-nudge-left',()=>nudge(-1,0)],['dd-nudge-right',()=>nudge(1,0)]])$(id).onclick=func;
-const editorCanvas=$('dd-editor');editorCanvas.addEventListener('pointerdown',startGesture);editorCanvas.addEventListener('pointermove',moveGesture);editorCanvas.addEventListener('pointerup',endGesture);editorCanvas.addEventListener('pointercancel',endGesture);editorCanvas.addEventListener('lostpointercapture',endGesture);
+const editorCanvas=$('dd-editor');editorCanvas.tabIndex=0;editorCanvas.setAttribute('role','application');editorCanvas.setAttribute('aria-label','Etikettenvorschau. Ausgewählte Bild- oder Textebene mit den Pfeiltasten verschieben. Umschalt für zehn Pixel, Alt für Viertelpixel.');editorCanvas.addEventListener('pointerdown',e=>{if(e.pointerType!=='touch')editorCanvas.focus({preventScroll:true});});editorCanvas.addEventListener('pointerdown',startGesture);editorCanvas.addEventListener('pointermove',moveGesture);editorCanvas.addEventListener('pointerup',endGesture);editorCanvas.addEventListener('pointercancel',endGesture);editorCanvas.addEventListener('lostpointercapture',endGesture);
 window.addEventListener('resize',requestPreview);
-setInterval(()=>{if(loaded()&&!isBusy())handleSizeChange();},1100);
+setInterval(()=>{updatePrinterSummary();if(loaded()&&!isBusy())handleSizeChange();},1000);
 
-/* V13 user interface: existing original control nodes are moved, never cloned.
-   Original Bluetooth listeners, roll storage, printer, and event handlers are preserved. */
+/* Studio user interface: the original control nodes are moved, never cloned, so the
+   original Bluetooth listeners, roll storage, printer and event handlers are preserved. */
+const DESKTOP_QUERY='(min-width:900px)';
+function isDesktopLayout(){return window.matchMedia?window.matchMedia(DESKTOP_QUERY).matches:window.innerWidth>=900;}
+function setPrinterCollapsed(collapsed,persist=false){
+ const bar=$('dd-printerbar'),toggle=$('dd-printer-toggle');if(!bar||!toggle)return;
+ bar.classList.toggle('collapsed',!!collapsed);
+ toggle.textContent=collapsed?'⚙ Drucker ▾':'Fertig ▴';toggle.setAttribute('aria-expanded',String(!collapsed));
+ toggle.title=collapsed?'Drucker, Etikettgröße und Dichte einstellen':'Druckereinstellungen einklappen';
+ if(persist){try{localStorage.setItem('niimbot-studio:printer-collapsed',collapsed?'1':'0');}catch(e){}}
+ requestAnimationFrame(()=>{window.NiimbotStudioUI?.refitPanel?.();requestPreview();});
+}
+let lastConnected=null;
+function updatePrinterSummary(){
+ const conn=$('dd-conn'),short=$('dd-printer-short');if(!conn||!short)return;
+ const connected=!!window.Niimbot?.printer;
+ conn.classList.toggle('on',connected);conn.textContent=connected?'Verbunden':'Getrennt';conn.title=connected?'Drucker ist verbunden':'Kein Drucker verbunden';
+ $('dd-printerbar')?.classList.toggle('connected',connected);
+ for(const o of $('size')?.options||[]){const t=o.textContent,n=t.replace('(cable flag, 203 dpi)','(Kabelfahne, 203 dpi)').replace('(cable flag)','(Kabelfahne)').replace(' round corner',' abgerundet').replace('— no size for this model —','– keine Größe für dieses Modell –');if(n!==t)o.textContent=n;}
+ const model=($('model')?.selectedOptions?.[0]?.textContent||'').replace(/^Niimbot\s+/,'');
+ const size=$('size')?.selectedOptions?.[0]?.textContent||'';
+ short.textContent=[model,size,$('density')?.value?'Dichte '+$('density').value:''].filter(Boolean).join(' · ');
+ if(lastConnected!==null&&connected!==lastConnected){
+  if(connected&&!isDesktopLayout())setPrinterCollapsed(true);
+  if(!connected)setPrinterCollapsed(false);
+ }
+ lastConnected=connected;
+}
 function setupTabbedLayout(){
  const root=$('dd-addon'); if(!root||root.dataset.tabbed==='true')return;
  root.dataset.tabbed='true';document.body.classList.add('dd-has-studio');
@@ -1461,40 +1746,59 @@ function setupTabbedLayout(){
  const toolbarOf=id=>$(id)?.closest('.dd-toolbar');
  const panelOf=id=>$(id)?.closest('.dd-panel');
  const cropDialog=$('dd-crop-dialog');
+
+ // ---- Printer bar (model, label size, density, connect) ----
  const printer=make('header','dd-printerbar'); printer.id='dd-printerbar';
- const brand=make('div','dd-printerbar-head');brand.innerHTML='<strong>🏷️ Niimbot Druckstudio <small style="font-weight:500;color:#5c7698">V15</small></strong><span style="font-size:.74rem;color:#637c99">iPhone / Web Bluetooth</span>';
- printer.appendChild(brand);
+ const head=make('div','dd-printerbar-head');
+ const brand=make('div','dd-brand');brand.innerHTML='🏷️ Druckstudio<small>V18</small>';
+ const summary=make('div','dd-printer-summary');summary.innerHTML='<span id="dd-conn" class="dd-conn">Getrennt</span><span id="dd-printer-short"></span>';
+ const toggle=make('button','','Einklappen ▴');toggle.type='button';toggle.id='dd-printer-toggle';toggle.setAttribute('aria-expanded','true');
+ toggle.onclick=()=>setPrinterCollapsed(!printer.classList.contains('collapsed'),true);
+ const quick=make('button','dd-quick-connect','🔗 Verbinden');quick.type='button';quick.id='dd-quick-connect';quick.title='Drucker per Bluetooth verbinden';quick.onclick=()=>$('identify')?.click();
+ head.append(brand,summary,quick,toggle);printer.appendChild(head);
  const selects=make('div','dd-printer-controls');
- for(const [id,name] of [['model','Drucker'],['size','Etikett'],['density','Dichte']]){const control=labelOf(id);if(control){if(control.tagName==='LABEL'&&control.firstChild?.nodeType===3)control.firstChild.textContent=name+': ';selects.appendChild(control);}}
+ for(const [id,name] of [['model','Drucker'],['size','Etikett'],['density','Dichte']]){const control=labelOf(id);if(control){if(control.tagName==='LABEL'&&control.firstChild?.nodeType===3)control.firstChild.textContent=name;selects.appendChild(control);}}
  printer.appendChild(selects);
  const actions=make('div','dd-printer-actions');
  for(const id of ['identify','disconnect']){const btn=$(id);if(btn){btn.textContent=id==='identify'?'🔗 Drucker verbinden':'Trennen';actions.appendChild(btn);}}
  printer.appendChild(actions);
- if($('status')){const status=make('div','dd-printer-info'); moved($('status'),status);printer.appendChild(status);}
+ const statusLine=$('status');
+ if(statusLine){const info=make('div','dd-printer-info'); moved(statusLine,info);printer.appendChild(info);
+  new MutationObserver(()=>{updatePrinterSummary();statusLine.title=statusLine.textContent;}).observe(statusLine,{childList:true,characterData:true,subtree:true});}
  if($('dd-blehint'))moved($('dd-blehint'),printer);
  root.insertBefore(printer,root.firstChild);
- const oldTitle=root.querySelector(':scope > h2');if(oldTitle)oldTitle.remove();
- const oldDescription=root.querySelector(':scope > p.dd-muted');if(oldDescription)oldDescription.remove();
+ let startCollapsed=true;try{startCollapsed=localStorage.getItem('niimbot-studio:printer-collapsed')!=='0';}catch(e){}
+ setPrinterCollapsed(!isDesktopLayout()&&startCollapsed);
+ root.querySelector(':scope > h2')?.remove();
+ root.querySelector(':scope > p.dd-muted')?.remove();
+
+ // ---- Workspace: preview + tools ----
  const workspace=make('div','dd-workspace');workspace.id='dd-workspace';root.appendChild(workspace);
- const preview=make('section','dd-preview-area');preview.id='dd-preview-area';preview.setAttribute('aria-label','Ständige Druckvorschau');
- const previewHead=make('div','dd-preview-head');previewHead.appendChild(make('span','dd-preview-name','Vorschau'));
- const outerButton=make('button','dd-mobile-action','Außen zeigen');outerButton.type='button';outerButton.id='dd-preview-overflow-toggle';outerButton.title='Elemente außerhalb des Druckbereichs ein- oder ausblenden';outerButton.onclick=()=>{state.showOutsideBounds=!state.showOutsideBounds;updateTemplateUiState();requestPreview();};previewHead.appendChild(outerButton);
- if($('dd-undo'))moved($('dd-undo').closest('.dd-historybar'),previewHead);
+ const preview=make('section','dd-preview-area');preview.id='dd-preview-area';preview.setAttribute('aria-label','Druckvorschau');
+ const previewHead=make('div','dd-preview-head');
+ moved($('dd-preview-title'),previewHead);
+ const viewButton=make('button','dd-mobile-action');viewButton.type='button';viewButton.id='dd-printview-toggle';
+ viewButton.onclick=()=>{state.printView=!state.printView;try{localStorage.setItem('niimbot-studio:printview',state.printView?'1':'0');}catch(e){}updateTemplateUiState();requestPreview();};
+ previewHead.appendChild(viewButton);
+ const outerButton=make('button','');outerButton.type='button';outerButton.id='dd-preview-overflow-toggle';outerButton.title='Teile außerhalb des Druckbereichs blass anzeigen';
+ outerButton.onclick=()=>{state.showOutsideBounds=!state.showOutsideBounds;updateTemplateUiState();requestPreview();};previewHead.appendChild(outerButton);
+ const historyBar=$('dd-undo')?.closest('.dd-historybar');
+ if(historyBar){$('dd-undo').innerHTML='↶<span class="dd-label-long"> Zurück</span>';$('dd-redo').innerHTML='↷<span class="dd-label-long"> Vor</span>';moved(historyBar,previewHead);}
  preview.appendChild(previewHead);
- moved($('dd-preview-title'),preview);
  moved($('dd-editor')?.closest('.dd-editorstage'),preview);
  workspace.appendChild(preview);
+
  const tools=make('section','dd-toolshell');tools.id='dd-toolshell';tools.setAttribute('aria-label','Bearbeitungswerkzeuge');
- const grip=make('div','dd-gripbar');grip.id='dd-gripbar';grip.setAttribute('role','separator');grip.setAttribute('aria-label','Höhe der Werkzeugleiste verschieben');grip.setAttribute('aria-orientation','horizontal');
- const indicator=make('span','dd-draghandle');grip.appendChild(indicator);
+ const grip=make('div','dd-gripbar');grip.id='dd-gripbar';grip.setAttribute('role','separator');grip.setAttribute('aria-label','Höhe des Werkzeugbereichs ändern');grip.setAttribute('aria-orientation','horizontal');
+ grip.appendChild(make('span','dd-draghandle'));
  const sizes=make('div','dd-toolsizes');
- for(const [label,size] of [['Klein',174],['Mittel',290],['Groß',470]]){
-   const b=make('button','',label);b.type='button';b.title='Werkzeugbereich '+label.toLowerCase();b.addEventListener('click',()=>setPanelHeight(size));sizes.appendChild(b);
+ for(const [label,frac] of [['Klein',.34],['Mittel',.48],['Groß',.64]]){
+   const b=make('button','',label);b.type='button';b.title='Werkzeugbereich '+label.toLowerCase();b.addEventListener('click',()=>setPanelFraction(frac));sizes.appendChild(b);
  }
  grip.appendChild(sizes);tools.appendChild(grip);
  const tabs=make('div','dd-tabstrip');tabs.id='dd-tabstrip';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Bearbeitungsbereiche');tools.appendChild(tabs);
- const contents=make('div','dd-tabcontent');contents.id='dd-tabcontent';contents.setAttribute('role','tabpanel');tools.appendChild(contents);workspace.appendChild(tools);
- const tabDefinitions=[['dateien','📁 Dateien'],['vorlagen','💾 Vorlagen'],['text','✏️ Text'],['rund','◠ Rundtext'],['bild','🎛️ Bild'],['align','⌖ Ausrichten'],['ebenen','▤ Ebenen'],['fonts','Aa Fonts']];
+ const contents=make('div','dd-tabcontent');contents.id='dd-tabcontent';tools.appendChild(contents);workspace.appendChild(tools);
+ const tabDefinitions=[['dateien','📁 Dateien'],['text','✏️ Text'],['rund','◠ Rundtext'],['bild','🎛️ Bild'],['ebenen','▤ Ebenen'],['align','⌖ Position'],['vorlagen','💾 Vorlagen']];
  const pages=new Map();
  for(const [key,label] of tabDefinitions){
    const page=make('div','dd-tab-page');page.id='dd-panel-'+key;page.setAttribute('role','tabpanel');page.setAttribute('aria-labelledby','dd-tab-'+key);page.dataset.tab=key;page.hidden=true;pages.set(key,page);contents.appendChild(page);
@@ -1504,189 +1808,206 @@ function setupTabbedLayout(){
  tabs.addEventListener('keydown',e=>{const buttons=[...tabs.querySelectorAll('button')],i=buttons.indexOf(e.target);if(i<0)return;const next=e.key==='Home'?0:e.key==='End'?buttons.length-1:e.key==='ArrowRight'?(i+1)%buttons.length:e.key==='ArrowLeft'?(i+buttons.length-1)%buttons.length:-1;if(next<0)return;e.preventDefault();switchTab(buttons[next].dataset.tab);buttons[next].focus();});
  let selectedTab='dateien';
  function switchTab(key){
-   if(!pages.has(key))return;selectedTab=key;
+   if(!pages.has(key))key='dateien';selectedTab=key;
+   if(key==='bild'&&state.textSelectedId){const entry=state.queue[state.selected];if(entry&&allImages(entry).some(x=>!x.layer.locked))setActiveImage(entry,state.activeImageId);}
+   if((key==='text'||key==='rund')&&!state.textSelectedId){const t=[...(state.queue[state.selected]?.texts||[])].reverse().find(x=>!x.locked);if(t){state.textSelectedId=t.id;renderTextControls();}}
    for(const [name,page] of pages){page.hidden=(name!==key);}
    contents.scrollTop=0;
    for(const b of tabs.querySelectorAll('button')){b.setAttribute('aria-selected',b.dataset.tab===key?'true':'false');b.tabIndex=b.dataset.tab===key?0:-1;}
-   const active=tabs.querySelector('[aria-selected="true"]');if(active){const left=active.offsetLeft+active.offsetWidth/2-tabs.clientWidth/2;tabs.scrollLeft=Math.max(0,left);}
-   try{sessionStorage.setItem('niimbot-v13:tab',key);}catch(e){}
+   const active=tabs.querySelector('[aria-selected="true"]');if(active&&tabs.scrollWidth>tabs.clientWidth){const left=active.offsetLeft+active.offsetWidth/2-tabs.clientWidth/2;tabs.scrollLeft=Math.max(0,left);}
+   try{sessionStorage.setItem('niimbot-studio:tab',key);}catch(e){}
    requestAnimationFrame(()=>requestPreview());
  }
  window.NiimbotStudioUI={selectTab:switchTab,get selectedTab(){return selectedTab;}};
- // Files: import controls and label queue.
+
+ // Files: import controls, label queue and copies.
  const files=pages.get('dateien');files.appendChild(make('p','dd-tab-lead','Bilder / PDFs importieren'));
  moved($('dd-drop'),files);moved($('dd-files'),files);
  moved(rowOf('dd-import-mode'),files);
- moved(rowOf('dd-importdpi'),files);
- const sourceToolbar=toolbarOf('dd-clear');
- if(sourceToolbar)moved(sourceToolbar,files);
+ moved($('dd-import-mode-hint'),files);
+ const uploadActions=make('div','dd-toolbar');
+ const addMore=make('button','dd-mobile-action','＋ Weitere Bilder aufs Etikett');addMore.type='button';addMore.id='dd-files-add-layer';
+ addMore.onclick=()=>$('dd-layer-files').click();uploadActions.appendChild(addMore);
+ const blankFromFiles=make('button','dd-mobile-action','＋ Leeres Etikett');blankFromFiles.type='button';blankFromFiles.id='dd-files-add-blank';blankFromFiles.onclick=()=>blankLabel();uploadActions.appendChild(blankFromFiles);
+ files.appendChild(uploadActions);
+ const importRow=rowOf('dd-importdpi');moved(importRow,files);
+ files.appendChild(make('p','dd-tab-lead','Druckwarteschlange'));
+ const queueBar=make('div','dd-row dd-queuebar');files.appendChild(queueBar);
+ const copiesLabel=labelOf('dd-copies');if(copiesLabel){moved(copiesLabel,queueBar);if(copiesLabel.firstChild?.nodeType===3)copiesLabel.firstChild.textContent='Kopien je Etikett';}
+ const clear=$('dd-clear');if(clear){clear.textContent='🗑️ Alle entfernen';queueBar.appendChild(clear);}
  moved($('dd-queue'),files);
- if($('dd-clear'))$('dd-clear').textContent='🗑️ Warteschlange leeren';
+
+ // Templates
  const templates=pages.get('vorlagen');templates.appendChild(make('p','dd-tab-lead','Etiketten speichern · wiederverwenden · in anderer Größe drucken'));
  const currentInfo=make('p','dd-muted');currentInfo.id='dd-template-current';templates.appendChild(currentInfo);
  const nameLine=make('div','dd-row');nameLine.innerHTML='<label>Vorlagenname<input id="dd-template-name" type="text" placeholder="Mein Etikett"></label><label>Ordner<input id="dd-template-folder" type="text" value="Meine Vorlagen"></label>';templates.appendChild(nameLine);
- const toolbar=make('div','dd-toolbar');toolbar.innerHTML='<button id="dd-template-save-browser" type="button" class="primary">💾 Speichern</button><button id="dd-template-save-as" type="button">Speichern unter …</button><button id="dd-template-export-file" type="button">↓ Als Datei</button><button id="dd-template-import-btn" type="button">↑ Datei öffnen</button><input id="dd-template-import-file" type="file" accept=".json,.niimbot-label.json,application/json" hidden>';templates.appendChild(toolbar);
- const searchLine=make('div','dd-row');searchLine.innerHTML='<label>Vorlagen durchsuchen<input id="dd-template-search" type="search" placeholder="Name oder Ordner suchen"></label>';templates.appendChild(searchLine);
- const note=make('div','dd-muted');note.textContent='Gespeicherte Vorlagen bleiben auf dieser Website im Browser (IndexedDB) erhalten. Andere Browserprofile oder Website-Domains haben einen getrennten Speicher; Pfade derselben Domain teilen ihn. Für Gerätewechsel als Datei exportieren.';templates.appendChild(note);
+ const toolbar=make('div','dd-toolbar');toolbar.innerHTML='<button id="dd-template-save-browser" type="button" class="primary">💾 Speichern</button><button id="dd-template-save-as" type="button">Als Kopie speichern</button><button id="dd-template-export-file" type="button">↓ Als Datei</button><button id="dd-template-import-btn" type="button">↑ Datei öffnen</button><input id="dd-template-import-file" type="file" accept=".json,application/json" hidden>';templates.appendChild(toolbar);
+ const searchLine=make('div','dd-row');searchLine.innerHTML='<label>Vorlagen durchsuchen<input id="dd-template-search" type="search" placeholder="Name oder Ordner"></label>';templates.appendChild(searchLine);
  const templateList=make('div','dd-template-gallery');templateList.id='dd-template-list';templates.appendChild(templateList);
- // Image: only image-specific sliders and grayscale settings.
+ const note=make('p','dd-muted');note.textContent='Vorlagen werden nur in diesem Browser auf diesem Gerät gespeichert. Für Sicherung oder Gerätewechsel „↓ Als Datei“ verwenden. Wird eine Vorlage bei anderer Etikettgröße geöffnet, wird sie proportional angepasst; das Original bleibt unverändert.';templates.appendChild(note);
+
+ // Image: print mode, tonal corrections, crop/remove.
  const image=pages.get('bild');image.appendChild(make('p','dd-tab-lead','Ausgewähltes Bild bearbeiten'));
  moved($('dd-active-image'),image);
- moved(rowOf('dd-bw'),image);
+ const selectedImageActions=make('div','dd-toolbar');
+ const cropImage=make('button','dd-mobile-action','✂️ Zuschneiden');cropImage.type='button';cropImage.id='dd-crop-selected-image';cropImage.onclick=()=>$('dd-crop-image').click();
+ const removeImage=make('button','dd-mobile-action','🗑 Bild entfernen');removeImage.type='button';removeImage.id='dd-remove-selected-image';
+ removeImage.onclick=()=>{const entry=state.queue[state.selected];if(!entry)return;const id=imageForId(entry,state.activeImageId)?state.activeImageId:allImages(entry)[0]?.id;if(id)removeImageLayer(id);};
+ selectedImageActions.append(cropImage,removeImage);image.appendChild(selectedImageActions);
+ const bwRow=make('div','dd-row');moved(labelOf('dd-bw'),bwRow);image.appendChild(bwRow);
+ image.appendChild(Object.assign(make('p','dd-caption'),{textContent:'Der Drucker kennt nur Schwarz und Weiß. „Foto – Rasterung“ stellt Graustufen durch feine Punkte dar. Die Vorschau zeigt in der Druckansicht genau das Druckergebnis.'}));
  moved($('dd-image-panel'),image);
- // Text: core text editor with its untouched inputs and formatting callbacks.
- const text=pages.get('text');text.appendChild(make('p','dd-tab-lead','Text einfügen und formatieren'));
+
+ // Text: editor + custom fonts.
+ const text=pages.get('text');
  const textPanel=$('dd-text-panel');const textCtrls=$('dd-text-controls');
  if(textPanel){
-   moved(textPanel.querySelector('h3'),text);
+   const h=textPanel.querySelector('h3');if(h){h.className='dd-tab-lead';h.textContent='Text einfügen und formatieren';moved(h,text);}
    moved(toolbarOf('dd-add-text'),text);
    moved($('dd-textlist'),text);
  }
- const textMain=make('div','dd-text-main');text.appendChild(textMain);
+ const textMain=make('div','dd-text-main');
+ const arc=pages.get('rund');arc.appendChild(make('p','dd-tab-lead','Gerader, senkrechter oder runder Text'));
+ arc.appendChild(Object.assign(make('p','dd-caption'),{textContent:'Gilt für das ausgewählte Textfeld. Zuerst im Tab „Text“ ein Textfeld anlegen oder in der Vorschau antippen.'}));
+ const layers=pages.get('ebenen');layers.appendChild(make('p','dd-tab-lead','Bilder und Texte · vorne / hinten / sperren'));
  if(textCtrls){
-   // Transfer the groups except arc controls & layer-only controls to Text.
    const curveTitle=$('dd-flow-horizontal')?.closest('.dd-flow-buttons')?.previousElementSibling;
    const flowButtons=$('dd-flow-horizontal')?.closest('.dd-flow-buttons');
    const curveBlock=$('dd-curve-controls');
    const layerButtons=toolbarOf('dd-select-image');
    const layerList=$('dd-layers');
    const layerCaption=layerList?.previousElementSibling;
-   const arc=pages.get('rund');arc.appendChild(make('p','dd-tab-lead','Gerader, vertikaler oder runder Text'));
    if(curveTitle)moved(curveTitle,arc);
    if(flowButtons)moved(flowButtons,arc);
    if(curveBlock)moved(curveBlock,arc);
-   // Remaining form nodes go to Text, preserving their existing id/event bindings.
    while(textCtrls.firstChild){
      const node=textCtrls.firstChild;
      if(node===layerButtons||node===layerCaption||node===layerList){node.remove();continue;}
      textMain.appendChild(node);
    }
-   const layers=pages.get('ebenen');layers.appendChild(make('p','dd-tab-lead','Bilder und Texte · vorne / hinten / sperren'));
+   moved($('dd-add-layer')?.closest('.dd-layer-files'),layers);
    if(layerButtons)moved(layerButtons,layers);
    if(layerCaption)moved(layerCaption,layers);
    if(layerList)moved(layerList,layers);
    textCtrls.appendChild(textMain);moved(textCtrls,text);
  }
- // Fonts use the original details node, without changing IndexedDB storage.
- const fonts=pages.get('fonts');fonts.appendChild(make('p','dd-tab-lead','Schriftarten wählen und lokal speichern'));
- if($('dd-font')){
-   const fontRow=rowOf('dd-font');
-   // Don't clone native select (the Text tab retains selection). Shortcut switches to Text tab.
-   const shortcut=make('button','dd-mobile-action','Schrift im Text-Tab auswählen ↗');shortcut.type='button';shortcut.onclick=()=>switchTab('text');fonts.appendChild(shortcut);
- }
- const customFonts=$('dd-fontfile')?.closest('details');if(customFonts){customFonts.open=true;moved(customFonts,fonts);}
- // Align and rotate also apply to the active text/image selection.
- const align=pages.get('align');align.appendChild(make('p','dd-tab-lead','Position, Drehung und Größe'));
- moved(panelOf('dd-rotation'),align);
- const labelPanel=make('div','dd-panel');labelPanel.innerHTML='<h3>Etikett / Druckbereich</h3><div class="dd-toolbar"><button id="dd-rotate-label" type="button">↻ Roten Druckrahmen 90° drehen</button><span id="dd-label-rotation-status" class="dd-muted">0° Querformat</span></div><label class="dd-check"><input id="dd-show-outside-check" type="checkbox"> Alle Ebenen außerhalb der roten Markierung anzeigen</label><p class="dd-muted">Die rote gestrichelte Markierung ist der einzige bedruckte Bereich. Bilder und Text außerhalb bleiben beim Bearbeiten sichtbar, werden aber abgeschnitten.</p>';align.appendChild(labelPanel);
- const alignZoom=make('div','dd-row');moved(labelOf('dd-zoom'),alignZoom);align.appendChild(alignZoom);
- moved(rowOf('dd-align-left'),align);
- moved(toolbarOf('dd-text-tofront'),pages.get('ebenen'));// possibly already transferred
- const zoomQuick=make('div','dd-toolbar');
- for(const id of ['dd-fit-reset','dd-cover-reset','dd-zoom-apply']) if($(id))moved($(id),zoomQuick);
- align.appendChild(zoomQuick);
- // The crop buttons, independent image layers & hints.
- const layers=pages.get('ebenen');moved($('dd-add-layer')?.closest('.dd-layer-files'),layers);
+ const customFonts=$('dd-fontfile')?.closest('details');if(customFonts){moved(customFonts,text);}
  moved(root.querySelector(':scope > .dd-layer-hint'),layers);
- // If a layer list was detached from the previous parent, restore it explicitly.
  if($('dd-layers')&&!layers.contains($('dd-layers')))moved($('dd-layers'),layers);
- // The short global status and bottom dock.
+
+ // Position: rotation, alignment, zoom and the print-area rotation.
+ const align=pages.get('align');align.appendChild(make('p','dd-tab-lead','Position, Drehung und Größe des ausgewählten Elements'));
+ moved(rowOf('dd-align-left'),align);
+ moved(panelOf('dd-rotation'),align);
+ const alignZoom=make('div','dd-row');moved(labelOf('dd-zoom'),alignZoom);align.appendChild(alignZoom);
+ const zoomQuick=make('div','dd-toolbar');
+ for(const id of ['dd-zoom-apply','dd-fit-reset','dd-cover-reset']) if($(id))moved($(id),zoomQuick);
+ align.appendChild(zoomQuick);
+ const labelPanel=make('div','dd-panel');labelPanel.innerHTML='<h3>Etikett / Druckbereich</h3><label class="dd-rotate-mode-label" for="dd-label-rotate-mode">Beim Drehen des Druckbereichs</label><select id="dd-label-rotate-mode"><option value="keep">Inhalte behalten ihre Ausrichtung</option><option value="with">Alle Bild- und Textfelder mitdrehen</option></select><div class="dd-toolbar"><button id="dd-rotate-label" type="button">↻ Druckbereich 90° drehen</button><span id="dd-label-rotation-status" class="dd-muted">0° Querformat</span></div><label class="dd-check"><input id="dd-show-outside-check" type="checkbox"> Teile außerhalb des Druckbereichs anzeigen</label><p class="dd-keyboard-hint">⌨️ Laptop: Ausgewähltes Element mit den Pfeiltasten um 1 px bewegen · Umschalt + Pfeil: 10 px · Alt + Pfeil: 0,25 px. Vorher in die Vorschau klicken.</p>';align.appendChild(labelPanel);
+
+ // ---- Bottom dock ----
  const dock=make('footer','dd-globaldock');dock.id='dd-globaldock';
  const dockMain=make('div','dd-dockmain');
- const save=make('button','dd-docksave','💾 Speichern');save.id='dd-dock-save';save.type='button';save.onclick=()=>switchTab('vorlagen');dockMain.appendChild(save);
- const print=$('dd-print');if(print){print.classList.add('dd-dockprint');print.textContent='🖨️ Drucken';moved(print,dockMain);}
- const rolls=make('button','dd-dockrolls','🏷 Rollen');rolls.id='dd-dockrolls';rolls.type='button';rolls.setAttribute('aria-expanded','false');dockMain.appendChild(rolls);
- const more=make('button','dd-dockjobs','⋯');more.id='dd-dockjobs';more.type='button';more.title='Aufträge und Druckstatus';more.setAttribute('aria-expanded','false');dockMain.appendChild(more);
+ const save=make('button','dd-docksave','💾 Speichern');save.id='dd-dock-save';save.type='button';save.title='Aktuelles Etikett als Vorlage in diesem Browser speichern';
+ save.onclick=async()=>{switchTab('vorlagen');if(!state.queue[state.selected]){message('Noch kein Etikett zum Speichern vorhanden.',true);return;}try{await saveCurrentTemplateToBrowser();}catch(e){message('Vorlage konnte nicht gespeichert werden: '+(e.message||e),true);}};
+ dockMain.appendChild(save);
+ const print=$('dd-print');if(print){print.classList.add('dd-dockprint');moved(print,dockMain);}
+ const stop=moved($('dd-stop'),dockMain);if(stop){stop.classList.add('dd-dockstop');stop.textContent='⏹ Stopp';}
+ const rolls=make('button','dd-dockrolls','🏷 Rollen');rolls.id='dd-dockrolls';rolls.type='button';rolls.title='Rollen und eigene Etikettgrößen';rolls.setAttribute('aria-expanded','false');dockMain.appendChild(rolls);
+ const more=make('button','dd-dockjobs','⋯');more.id='dd-dockjobs';more.type='button';more.title='Druckerstatus und Protokoll';more.setAttribute('aria-label','Druckerstatus und Protokoll');more.setAttribute('aria-expanded','false');dockMain.appendChild(more);
  dock.appendChild(dockMain);
  const dockMeta=make('div','dd-dockmeta');moved($('dd-count'),dockMeta);moved($('dd-progress'),dockMeta);moved($('dd-state'),dockMeta);dock.appendChild(dockMeta);
  const drawer=make('div','dd-dockdrawer');drawer.id='dd-dockdrawer';drawer.hidden=true;
  const printSettings=make('section','dd-docksettings');
- printSettings.appendChild(make('p','dd-tab-lead','Druckauftrag'));
- const copiesLabel=labelOf('dd-copies');if(copiesLabel)moved(copiesLabel,printSettings);
- const stop=moved($('dd-stop'),dockMain);stop.classList.add('dd-dockstop');
+ printSettings.appendChild(make('p','dd-tab-lead','Drucker'));
  const statusButton=$('readstatus');if(statusButton){statusButton.textContent='Druckerstatus lesen';statusButton.style.display='inline-flex';moved(statusButton,printSettings);}
  const warn=root.querySelector(':scope > .dd-warning');if(warn)moved(warn,printSettings);
  const rollbox=$('rollbox');if(rollbox)moved(rollbox,drawer);
- const logbox=$('logbox');if(logbox)moved(logbox,drawer);
- drawer.appendChild(printSettings);dock.appendChild(drawer);root.appendChild(dock);
+ drawer.appendChild(printSettings);
+ const logbox=$('logbox');if(logbox){logbox.open=false;moved(logbox,drawer);}
+ dock.appendChild(drawer);root.appendChild(dock);
+ function measureDock(){if(!drawer.hidden)return;const h=Math.ceil(dock.getBoundingClientRect().height);if(h>20)document.documentElement.style.setProperty('--dock-h',h+'px');}
  function drawerOpen(kind){
    const show=drawer.hidden||drawer.dataset.view!==kind;
+   if(show)measureDock();
    drawer.hidden=!show;drawer.dataset.view=show?kind:'';
    rolls.setAttribute('aria-expanded',show&&kind==='rolls'?'true':'false');
    more.setAttribute('aria-expanded',show&&kind==='more'?'true':'false');
-   if(rollbox){rollbox.style.display=(!show||kind==='rolls')?'':'none';if(show&&kind==='rolls')rollbox.open=true;}
+   if(rollbox){rollbox.style.display=(show&&kind==='rolls')?'':'none';if(show&&kind==='rolls')rollbox.open=true;}
    if(logbox)logbox.style.display=(show&&kind==='more')?'':'none';
    printSettings.style.display=(show&&kind==='more')?'':'none';
  }
  rolls.onclick=()=>drawerOpen('rolls');more.onclick=()=>drawerOpen('more');
- // Resizing the bottom tool drawer changes its height, while preview stays visible.
- let panelPx=0;
- function limits(){
-   const total=workspace.clientHeight||550;
-   const max=Math.max(158,total-155);
-   return {min:Math.min(158,max),max};
- }
- function setPanelHeight(px,persist=true){
-   const {min,max}=limits();panelPx=Math.min(max,Math.max(min,Math.round(px)));
-   tools.style.flexBasis=panelPx+'px';tools.style.height=panelPx+'px';
-   grip.setAttribute('aria-valuenow',String(panelPx));
-   if(persist){try{localStorage.setItem('niimbot-v13:panel-height',String(panelPx));}catch(e){}}
+ document.addEventListener('pointerdown',e=>{if(!drawer.hidden&&!dock.contains(e.target)&&!e.target.closest('dialog'))drawerOpen(drawer.dataset.view);},true);
+ if(window.ResizeObserver)new ResizeObserver(measureDock).observe(dock);
+ measureDock();
+
+ // ---- Resizable tool drawer (phone layout only) ----
+ let panelFrac=.48;
+ try{const v=Number(localStorage.getItem('niimbot-studio:panel-frac'));if(v>=.2&&v<=.9)panelFrac=v;}catch(e){}
+ function limits(){const total=workspace.clientHeight||500;return {total,min:Math.min(150,total*.5),max:Math.max(150,total-190)};}
+ function applyPanel(px){
+   if(isDesktopLayout()){tools.style.removeProperty('height');tools.style.removeProperty('flex-basis');return;}
+   const {min,max}=limits();const h=Math.min(max,Math.max(min,Math.round(px)));
+   tools.style.height=h+'px';tools.style.flexBasis=h+'px';grip.setAttribute('aria-valuenow',String(h));
    requestAnimationFrame(()=>requestPreview());
  }
- window.NiimbotStudioUI.setPanelHeight=setPanelHeight;
- grip.setAttribute('aria-valuemin','158');grip.setAttribute('aria-valuemax','500');
+ function setPanelFraction(frac,persist=true){
+   panelFrac=Math.max(.2,Math.min(.9,frac));applyPanel(limits().total*panelFrac);
+   if(persist){try{localStorage.setItem('niimbot-studio:panel-frac',String(panelFrac));}catch(e){}}
+ }
+ window.NiimbotStudioUI.setPanelFraction=setPanelFraction;
+ window.NiimbotStudioUI.refitPanel=()=>applyPanel(limits().total*panelFrac);
  let drag=null;
  grip.addEventListener('pointerdown',e=>{
    if(e.target.closest('button'))return;
    drag={pointerId:e.pointerId,y:e.clientY,height:tools.getBoundingClientRect().height};
    grip.setPointerCapture(e.pointerId);
  });
- grip.addEventListener('pointermove',e=>{
-   if(!drag||drag.pointerId!==e.pointerId)return;
-   setPanelHeight(drag.height+(drag.y-e.clientY),false);
- });
- const endDrag=e=>{
-   if(!drag||drag.pointerId!==e.pointerId)return;
-   drag=null;setPanelHeight(tools.getBoundingClientRect().height,true);
- };
+ grip.addEventListener('pointermove',e=>{if(!drag||drag.pointerId!==e.pointerId)return;applyPanel(drag.height+(drag.y-e.clientY));});
+ const endDrag=e=>{if(!drag||drag.pointerId!==e.pointerId)return;drag=null;const {total}=limits();setPanelFraction(tools.getBoundingClientRect().height/total);};
  grip.addEventListener('pointerup',endDrag);grip.addEventListener('pointercancel',endDrag);
- grip.addEventListener('keydown',e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();setPanelHeight(panelPx+(e.key==='ArrowUp'?25:-25));}});
+ grip.addEventListener('keydown',e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){e.preventDefault();setPanelFraction(panelFrac+(e.key==='ArrowUp'?.05:-.05));}});
  grip.tabIndex=0;
- window.addEventListener('resize',()=>{
-   setPanelHeight(panelPx||260,false);
- });
- let initialHeight=270;
- try{initialHeight=Number(localStorage.getItem('niimbot-v13:panel-height'))||270;}catch(e){}
- setPanelHeight(initialHeight,false);
- try{selectedTab=sessionStorage.getItem('niimbot-v13:tab')||'dateien';}catch(e){}
- switchTab(pages.has(selectedTab)?selectedTab:'dateien');
+ window.addEventListener('resize',()=>{window.NiimbotStudioUI.refitPanel();measureDock();});
+ requestAnimationFrame(()=>window.NiimbotStudioUI.refitPanel());
+ try{selectedTab=sessionStorage.getItem('niimbot-studio:tab')||'dateien';}catch(e){}
+ switchTab(selectedTab);
+
  $('dd-template-save-browser').onclick=async()=>{try{await saveCurrentTemplateToBrowser();}catch(e){message('Vorlage konnte nicht gespeichert werden: '+(e.message||e),true);}};
- $('dd-template-save-as').onclick=async()=>{try{await saveCurrentTemplateToBrowser({saveAs:true});}catch(e){message('Speichern unter fehlgeschlagen: '+(e.message||e),true);}};
+ $('dd-template-save-as').onclick=async()=>{try{await saveCurrentTemplateToBrowser({saveAs:true});}catch(e){message('Speichern als Kopie fehlgeschlagen: '+(e.message||e),true);}};
  $('dd-template-export-file').onclick=()=>exportCurrentTemplateFile().catch(e=>message('Export fehlgeschlagen: '+(e.message||e),true));
  $('dd-template-import-btn').onclick=()=>$('dd-template-import-file').click();
  $('dd-template-import-file').onchange=async event=>{const file=event.target.files?.[0];if(!file)return;try{await importTemplateFile(file);}catch(e){message('Vorlage konnte nicht importiert werden: '+(e.message||e),true);}event.target.value='';};
  $('dd-template-search').oninput=renderTemplateLibrary;
  for(const [id,key] of [['dd-template-name','templateName'],['dd-template-folder','templateFolder']])$(id).addEventListener('input',()=>{const entry=state.queue[state.selected];if(entry)entry[key]=$(id).value;});
  $('dd-rotate-label').onclick=toggleLabelRotation;
+ $('dd-label-rotate-mode').value=state.labelRotateMode;
+ $('dd-label-rotate-mode').onchange=e=>{state.labelRotateMode=e.target.value==='with'?'with':'keep';};
  $('dd-show-outside-check').onchange=e=>{state.showOutsideBounds=!!e.target.checked;updateTemplateUiState();requestPreview();};
  renderTemplateLibrary();
- // Remove exhausted source wrappers and relocate the guidance below the relevant tool tab.
+ // Remove exhausted source wrappers; keep remaining guidance in the Files tab.
  for(const child of [...root.children]){
    if(child===printer||child===workspace||child===dock)continue;
-   if(child.classList.contains('dd-muted'))moved(child,pages.get('dateien'));
-   else if(child.id==='dd-text-panel'||(child.classList.contains('dd-row')&&!child.querySelector('input,select,textarea,button')))child.remove();
+   if(child.classList.contains('dd-muted')&&child.textContent.trim())moved(child,pages.get('align'));
+   else child.remove();
  }
  if(cropDialog){cropDialog.style.zIndex='1500';}
 }
 
+try{state.printView=localStorage.getItem('niimbot-studio:printview')!=='0';}catch(e){}
 setupTabbedLayout();
 if(window.ResizeObserver)new ResizeObserver(requestPreview).observe($('dd-editorwrap'));
 function syncViewport(){document.documentElement.style.setProperty('--studio-height',(window.visualViewport?.height||window.innerHeight)+'px');requestPreview();}
-window.visualViewport?.addEventListener('resize',syncViewport);syncViewport();
+window.visualViewport?.addEventListener('resize',syncViewport);window.addEventListener('orientationchange',()=>setTimeout(syncViewport,250));syncViewport();
 loadTemplateStore();
-wireTextEditor();wireAdditionalControls();renderFonts();renderTextControls();setImagePanel(null);setPreviewZoomUi();updateEditorViewport(null);updateHistoryControls();
+wireTextEditor();wireAdditionalControls();renderFonts();renderTextControls();setImagePanel(null);setPreviewZoomUi();updateEditorViewport(null);updateHistoryControls();updateTemplateUiState();
 (async()=>{
   await loadSavedFonts();
-  try{ bluetoothHint(); for(let t=0;t<150 && !loaded();t++)await sleep(100); if(!loaded())throw Error('Druckermodelle wurden nicht geladen. Vollständigen vendor-Ordner und Website-Verbindung prüfen.'); await upstreamRegistry(); committedSettings=readSettings();showQueue(); await showPreview(); message('Bereit. Drucker oben verbinden, Rolle wählen und PDF/Bild hinzufügen. Text und Rotation sind in der Vorschau bearbeitbar.'); }
-  catch(e){ message('Initialisierung: '+(e.message||e)+'\nDrucker-/Rollen-Auswahl fehlt? Webseite neu laden und Internetverbindung prüfen.',true); }
+  try{ bluetoothHint(); for(let t=0;t<150 && !loaded();t++)await sleep(100); if(!loaded())throw Error('Druckermodelle wurden nicht geladen. Bitte prüfen, ob niimbot-demo.html, niimbot.js und registry.json im Hauptverzeichnis liegen.');
+    await upstreamRegistry();
+    for(const o of $('model').options)o.textContent=o.textContent.replace(/^Niimbot\s+/,'');
+    committedSettings=readSettings();updatePrinterSummary();showQueue(); await showPreview();
+    message(window.Niimbot?.isSupported?.()?'Bereit. Drucker verbinden, Etikettgröße wählen und Bild, PDF oder Text hinzufügen.':'Bereit zum Gestalten. Zum Drucken die Seite in Bluefy (iPhone) bzw. Chrome/Edge (Computer) öffnen.'); }
+  catch(e){ message('Start: '+(e.message||e)+' Seite neu laden und Internetverbindung prüfen.',true); }
 })();

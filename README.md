@@ -1,50 +1,61 @@
-# Niimbot Druckstudio V15 – einfaches neues GitHub-Repository
+# Niimbot Druckstudio V18
 
-**Nur 9 technische Dateien, alle im Hauptverzeichnis. Kein `vendor`-Ordner.**
+Web-App zum Gestalten und Drucken von Etiketten auf Niimbot-Druckern über Web Bluetooth – für iPhone (in der App **Bluefy**) und Laptop (Chrome oder Edge).
 
-## Installation auf GitHub (Mac/PC)
+## Installation auf GitHub Pages
 
 1. Das ZIP **entpacken**.
-2. Auf GitHub „New repository“ wählen, z. B. `niimbot-druckstudio-v15-neu`; **Public** einstellen und erstellen.
-3. Das neue Repository öffnen. Bei einem leeren Repository den Link „uploading an existing file“ wählen; sonst `Add file` → `Upload files`.
-4. Den **entpackten Ordner öffnen**. **Nur die darin enthaltenen Dateien** (nicht den Ordner und nicht das ZIP!) auswählen und in die GitHub-Uploadfläche ziehen. Es sind 13 Dateien inklusive Anleitungen und Lizenzen. Alle müssen direkt in der obersten Ebene liegen.
-5. `Commit changes` wählen.
-6. `Settings` → `Pages` → `Build and deployment` → `Deploy from a branch`; Branch `main`, Ordner `/(root)` und `Save`.
-7. Nach erfolgreicher Veröffentlichung lautet die Adresse normalerweise: `https://DEINNAME.github.io/niimbot-druckstudio-v15-neu/`.
-8. Auf dem iPhone diese Adresse in **Bluefy** öffnen und dort den Drucker verbinden.
+2. Auf GitHub ein Repository öffnen bzw. neu anlegen (**Public**).
+3. `Add file` → `Upload files`. **Nur die Dateien aus dem entpackten Ordner** in die Uploadfläche ziehen – nicht den Ordner selbst und nicht das ZIP. Vorhandene Dateien mit gleichem Namen werden dabei ersetzt.
+4. `Commit changes`.
+5. Einmalig: `Settings` → `Pages` → `Deploy from a branch` → Branch `main`, Ordner `/(root)` → `Save`.
+6. Nach 1–2 Minuten ist die App unter `https://DEINNAME.github.io/REPOSITORY/` erreichbar.
+7. iPhone: Adresse in **Bluefy** öffnen (Safari/Chrome auf iOS können kein Bluetooth). Laptop: Chrome oder Edge.
 
-### So muss die GitHub-Dateiliste aussehen
+Alle Dateien müssen direkt in der obersten Ebene liegen:
 
 ```
-index.html
-addon.js
-niimbot-demo.html
-niimbot.js
-label-memory.js
-label-size.js
-registry.json
-pdf.min.js
-pdf.worker.min.js
-README.md
-LIZENZEN.md
-NIIMBOT-LICENSE.txt
-PDFJS-LICENSE.txt
+index.html          addon.js            niimbot-demo.html
+niimbot.js          label-memory.js     label-size.js
+registry.json       pdf.min.js          pdf.worker.min.js
+README.md           PRUEFBERICHT.md     LIZENZEN.md
+NIIMBOT-LICENSE.txt PDFJS-LICENSE.txt
 ```
 
-**Keine Unterordner!** Wenn stattdessen ein Ordner mit einem Namen wie `niimbot-v15-...` angezeigt wird, wurde versehentlich der äußere Ordner hochgeladen.
+Wenn das Update nicht sofort erscheint: Seite einmal neu laden (in Bluefy ggf. Tab schließen und neu öffnen).
 
-### Hinweise
+## Bedienung in Kürze
 
-- Die originalen Niimbot-Bluetooth-Treiber, Modellliste, RFID-Rollenverwaltung und die V15-Bearbeitung sind in diesem Paket enthalten.
-- PDF.js und dessen Worker liegen lokal. Zusätzliche PDF-CMaps und PDF-Standardschriften werden **nur bei Bedarf** über `cdn.jsdelivr.net` geladen. Dafür ist eine Internetverbindung erforderlich. Die PDF-Dateiinhalte selbst werden lokal im Browser verarbeitet, nicht auf den CDN hochgeladen.
-- Die gespeicherten Vorlagen und benutzerdefinierten Schriftarten sind browserprofil- und originabhängig. Wenn du eine neue GitHub-Pages-Adresse unter demselben `username.github.io` verwendest, kann sich die Speicher-Umgebung mit alten Repositories teilen; das ist keine automatische Cloud-Synchronisierung. Sicherheitshalber vorher Vorlagen als JSON exportieren.
-- GitHub verarbeitet eine hochgeladene ZIP-Datei **nicht** automatisch. Unbedingt entpacken und die Dateien hochladen.
-- Die Verbindung mit einem echten Bluetooth-Niimbot erfordert HTTPS und einen Web-Bluetooth-fähigen Browser (auf iOS z. B. Bluefy).
+- **Oben – Drucker:** `🔗 Verbinden` öffnet die Bluetooth-Auswahl. Modell wird automatisch erkannt. Über `⚙ Drucker` lassen sich Modell, Etikettgröße und Dichte ändern. Auf dem iPhone klappt die Leiste nach dem Verbinden zusammen, damit die Vorschau größer ist.
+- **Mitte – Vorschau:** Der rote Rahmen ist der Druckbereich. Elemente antippen und ziehen; mit zwei Fingern zoomen und drehen. `− 100% +` ändert nur die Ansichtsgröße (auf die Prozentzahl tippen = 100 %).
+  - **◐ Druckansicht** zeigt genau, was gedruckt wird (der Drucker kennt nur Schwarz und Weiß). Mit `🎨 Original` siehst du die Farben der Vorlage.
+  - **⬚ Außen** zeigt Teile außerhalb des Druckbereichs blass an.
+  - `↶` / `↷` = Rückgängig / Wiederholen.
+- **Unten – Werkzeuge** (Tabs): Dateien, Text, Rundtext, Bild, Ebenen, Position, Vorlagen. Auf dem iPhone lässt sich die Höhe am Griff ziehen oder mit Klein/Mittel/Groß wählen. Auf dem Laptop stehen die Werkzeuge rechts neben der Vorschau.
+- **Leiste ganz unten:** `💾 Speichern` (als Vorlage), `🖨️ Drucken`, `🏷 Rollen` (Rollen-Chip lesen, eigene Etikettgrößen anlegen), `⋯` (Druckerstatus, Protokoll).
 
-## Rückweg und Probleme
+### Bilder richtig drucken
 
-Das bisherige Repository wird nicht angefasst. Es bleibt als Sicherung bestehen.
+Im Tab **Bild** pro Bild den **Druckmodus** wählen:
 
-**Die Demo startet nicht?** Kontrolliere zunächst, ob `niimbot-demo.html`, `niimbot.js` und `registry.json` direkt neben `index.html` liegen. Dann Browserseite neu laden.
+- **Schwarzweiß – Standard:** für Logos, Text, Grafiken.
+- **Schwarzweiß – eigene Schwelle:** wie Standard, aber die Grenze zwischen Schwarz und Weiß ist einstellbar.
+- **Foto – Rasterung:** stellt Graustufen durch feine Punkte dar. JPG-Fotos verwenden diesen Modus automatisch.
 
-**PDF-Zeichen fehlen?** Prüfe, ob `cdn.jsdelivr.net` in deinem Netzwerk erreichbar ist. Sonst ggf. PDFs vorher zu PNG umwandeln.
+### Etikettgröße wechseln
+
+Beim Wechsel der Etikettgröße werden alle Texte und Bilder proportional angepasst und bleiben bearbeitbar. Jede Größe merkt sich ihre eigene Anordnung – beim Zurückwechseln ist alles wieder genau wie vorher. Rückgängig funktioniert auch hier.
+
+### Vorlagen
+
+Vorlagen werden nur im Browser auf diesem Gerät gespeichert. Für Sicherung oder Gerätewechsel `↓ Als Datei` exportieren und auf dem anderen Gerät `↑ Datei öffnen`. Eine Vorlage, die bei einer anderen Etikettgröße geöffnet wird, wird angepasst; das gespeicherte Original bleibt unverändert.
+
+## Was in V18 geändert wurde
+
+Siehe `PRUEFBERICHT.md` für die vollständige Liste der gefundenen Fehler, der Änderungen und der Tests.
+
+## Probleme
+
+- **„App-Dateien konnten nicht geladen werden“:** Liegen alle Dateien direkt im Hauptverzeichnis (keine Unterordner)? Ist GitHub Pages aktiviert?
+- **Kein Bluetooth:** iPhone → Bluefy verwenden. Laptop → Chrome/Edge, Seite über `https://` öffnen.
+- **PDF-Schrift fehlt:** Für manche PDFs lädt PDF.js Zusatzschriften von `cdn.jsdelivr.net`; dafür ist Internet nötig. Die PDF-Inhalte selbst bleiben auf dem Gerät.
